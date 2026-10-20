@@ -711,3 +711,29 @@ footer p {
     font-size: 13px;
   }
 }
+
+/* 지난 기록 월 선택 */
+.history-month-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 18px;
+}
+
+.history-month-control h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.history-month-control button {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff8fb;
+  color: var(--pink-dark);
+  font-size: 1.7rem;
+}
+

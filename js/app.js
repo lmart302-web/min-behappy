@@ -1,4 +1,3 @@
-
 import { db } from "./firebase.js";
 import {
   collection,
@@ -24,8 +23,10 @@ const reportView = document.getElementById("reportView");
 const saveButton = document.getElementById("saveButton");
 
 let editingDate = null;
+let historyMonth = localDateString().slice(0, 7);
 let reportMonth = localDateString().slice(0, 7);
 let reportRequestId = 0;
+let historyRequestId = 0;
 
 function localDateString(date = new Date()) {
   const offset = date.getTimezoneOffset();
@@ -64,6 +65,8 @@ function setView(view) {
 document.querySelectorAll(".tab").forEach(button => {
   button.addEventListener("click", () => setView(button.dataset.view));
 });
+
+// 울음 기록 입력
 
 function renumberCryCards() {
   const cards = [...cryList.querySelectorAll(".cry-card")];
@@ -147,7 +150,10 @@ async function loadTodayRecord() {
   } catch (error) {
     console.error("오늘 기록 불러오기 오류:", error);
     clearForm(today);
-    setMessage("오늘 기록을 불러오지 못했어요. Firebase 설정과 보안 규칙을 확인해 주세요.", true);
+    setMessage(
+      "오늘 기록을 불러오지 못했어요. Firebase 설정과 보안 규칙을 확인해 주세요.",
+      true
+    );
   }
 }
 
@@ -161,18 +167,24 @@ function collectRecord() {
   }));
 
   if (cries.some(cry => !cry.time || !cry.duration || !cry.intensity)) {
-    throw new Error("각 울음 기록의 시각, 지속 시간, 강도를 모두 입력해 주세요.");
+    throw new Error(
+      "각 울음 기록의 시각, 지속 시간, 강도를 모두 입력해 주세요."
+    );
   }
 
   return {
     date: dateInput.value,
-    mood: Number(form.querySelector('input[name="mood"]:checked')?.value || 0),
+    mood: Number(
+      form.querySelector('input[name="mood"]:checked')?.value || 0
+    ),
     cries,
     cryCount: cries.length,
     note: document.getElementById("dailyNote").value.trim(),
     updatedAt: new Date().toISOString()
   };
 }
+
+// 기록 저장 및 수정
 
 form.addEventListener("submit", async event => {
   event.preventDefault();
@@ -182,8 +194,6 @@ form.addEventListener("submit", async event => {
     setMessage("기록 날짜를 선택해 주세요.", true);
     return;
   }
-
-  let saved = false;
 
   try {
     const record = collectRecord();
@@ -205,10 +215,13 @@ form.addEventListener("submit", async event => {
     }
 
     editingDate = record.date;
-    saved = true;
+
+    // 저장한 기록이 포함된 달을 지난 기록에서 표시
+    historyMonth = record.date.slice(0, 7);
+
     setMessage("기록을 저장했어요.");
 
-    // 리포트 통계도 최신 기록으로 갱신
+    // 저장 후 지난 기록 탭으로 이동
     setView("history");
   } catch (error) {
     console.error("기록 저장 오류:", error);
@@ -227,22 +240,72 @@ form.addEventListener("submit", async event => {
 
 document.getElementById("addCry").addEventListener("click", () => addCry());
 
+// 날짜 표시
+
 function formatDate(date) {
   const [year, month, day] = date.split("-");
   return `${year}.${month}.${day}`;
 }
 
+// 지난 기록: 월 선택 UI 생성
+
+const historyHeading = historyView.querySelector(".section-heading");
+const historyMonthControl = document.createElement("div");
+
+historyMonthControl.className = "history-month-control";
+historyMonthControl.innerHTML = `
+  <button type="button" id="historyPrevMonth" aria-label="이전 달">‹</button>
+  <h3 id="historyMonth"></h3>
+  <button type="button" id="historyNextMonth" aria-label="다음 달">›</button>
+`;
+
+historyHeading.after(historyMonthControl);
+
+function changeHistoryMonth(amount) {
+  const [year, month] = historyMonth.split("-").map(Number);
+  const date = new Date(year, month - 1 + amount, 1);
+
+  historyMonth =
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
+  renderHistory();
+}
+
+document.getElementById("historyPrevMonth").addEventListener("click", () => {
+  changeHistoryMonth(-1);
+});
+
+document.getElementById("historyNextMonth").addEventListener("click", () => {
+  changeHistoryMonth(1);
+});
+
+// 지난 기록 목록
+
 async function renderHistory() {
-  historyList.innerHTML = '<div class="empty-state">기록을 불러오는 중...</div>';
+  const requestId = ++historyRequestId;
+
+  document.getElementById("historyMonth").textContent =
+    `${Number(historyMonth.slice(0, 4))}년 ${Number(historyMonth.slice(5, 7))}월`;
+
+  historyList.innerHTML =
+    '<div class="empty-state">기록을 불러오는 중...</div>';
 
   try {
-    const records = await readRecords();
+    const allRecords = await readRecords();
+
+    // 월을 빠르게 이동했을 때 이전 요청 결과가 덮어쓰지 않도록 처리
+    if (requestId !== historyRequestId) return;
+
+    const records = allRecords.filter(record =>
+      typeof record.date === "string" &&
+      record.date.startsWith(`${historyMonth}-`)
+    );
 
     historyList.innerHTML = "";
 
     if (!records.length) {
       historyList.innerHTML =
-        '<div class="empty-state">아직 저장된 기록이 없어요.<br>첫 기록을 작성해 보세요.</div>';
+        '<div class="empty-state">이 달에는 저장된 기록이 없어요.</div>';
       return;
     }
 
@@ -275,6 +338,7 @@ async function renderHistory() {
       if (record.cries?.length) {
         const cryDetails = document.createElement("div");
         cryDetails.className = "history-cry";
+
         cryDetails.textContent = record.cries
           .map((cry, index) =>
             `${index + 1}회차 ${cry.time} · ${cry.duration} · 강도 ${cry.intensity}/5`
@@ -326,6 +390,9 @@ async function renderHistory() {
     });
   } catch (error) {
     console.error("기록 불러오기 오류:", error);
+
+    if (requestId !== historyRequestId) return;
+
     historyList.innerHTML =
       '<div class="empty-state">기록을 불러오지 못했어요. Firebase 설정과 보안 규칙을 확인해 주세요.</div>';
   }
@@ -343,8 +410,13 @@ function changeMonth(amount) {
   renderReport();
 }
 
-document.getElementById("prevMonth").addEventListener("click", () => changeMonth(-1));
-document.getElementById("nextMonth").addEventListener("click", () => changeMonth(1));
+document.getElementById("prevMonth").addEventListener("click", () => {
+  changeMonth(-1);
+});
+
+document.getElementById("nextMonth").addEventListener("click", () => {
+  changeMonth(1);
+});
 
 function countMostCommon(values) {
   if (!values.length) return "-";
@@ -359,16 +431,6 @@ function countMostCommon(values) {
     .sort((a, b) => b[1] - a[1])[0][0];
 }
 
-function getTimePeriod(time) {
-  if (!time) return null;
-
-  const hour = Number(time.split(":")[0]);
-
-  if (hour >= 5 && hour < 12) return "오전";
-  if (hour >= 12 && hour < 18) return "오후";
-  if (hour >= 18 && hour < 22) return "저녁";
-  return "밤";
-}
 
 function showNumber(value) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
@@ -376,12 +438,14 @@ function showNumber(value) {
 
 function renderMoodChart(records, daysInMonth) {
   const container = document.getElementById("moodChart");
+
   const points = records
     .filter(record => Number(record.mood) >= 1 && Number(record.mood) <= 5)
     .sort((a, b) => a.date.localeCompare(b.date));
 
   if (!points.length) {
-    container.innerHTML = '<p class="empty-state">이 달에는 우울감 기록이 없어요.</p>';
+    container.innerHTML =
+      '<p class="empty-state">이 달에는 우울감 기록이 없어요.</p>';
     return;
   }
 
@@ -394,8 +458,11 @@ function renderMoodChart(records, daysInMonth) {
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
 
-  const x = day => left + ((day - 1) / Math.max(daysInMonth - 1, 1)) * plotWidth;
-  const y = score => top + ((5 - score) / 4) * plotHeight;
+  const x = day =>
+    left + ((day - 1) / Math.max(daysInMonth - 1, 1)) * plotWidth;
+
+  const y = score =>
+    top + ((5 - score) / 4) * plotHeight;
 
   const grid = [1, 2, 3, 4, 5].map(score => `
     <line x1="${left}" y1="${y(score)}" x2="${width - right}" y2="${y(score)}"
@@ -457,7 +524,8 @@ function renderCryChart(records, daysInMonth) {
   });
 
   if (!records.length) {
-    container.innerHTML = '<p class="empty-state">이 달에는 저장된 기록이 없어요.</p>';
+    container.innerHTML =
+      '<p class="empty-state">이 달에는 저장된 기록이 없어요.</p>';
     return;
   }
 
@@ -496,7 +564,10 @@ function renderCryChart(records, daysInMonth) {
       </line>`;
     }
 
-    const barHeight = item.count === 0 ? 0 : (item.count / maxCount) * plotHeight;
+    const barHeight = item.count === 0
+      ? 0
+      : (item.count / maxCount) * plotHeight;
+
     const y = top + plotHeight - barHeight;
 
     return `<rect x="${x}" y="${y}" width="${barWidth}"
@@ -532,8 +603,11 @@ async function renderReport() {
   const [year, month] = reportMonth.split("-").map(Number);
   const daysInMonth = new Date(year, month, 0).getDate();
 
-  document.getElementById("reportMonth").textContent = `${year}년 ${month}월`;
-  document.getElementById("reportStatus").textContent = "기록을 분석하고 있어요.";
+  document.getElementById("reportMonth").textContent =
+    `${year}년 ${month}월`;
+
+  document.getElementById("reportStatus").textContent =
+    "기록을 분석하고 있어요.";
 
   try {
     const allRecords = await readRecords();
@@ -542,12 +616,15 @@ async function renderReport() {
     if (requestId !== reportRequestId) return;
 
     const records = allRecords
-      .filter(record => typeof record.date === "string" &&
-        record.date.startsWith(`${reportMonth}-`))
+      .filter(record =>
+        typeof record.date === "string" &&
+        record.date.startsWith(`${reportMonth}-`)
+      )
       .sort((a, b) => a.date.localeCompare(b.date));
 
     const totalCries = records.reduce(
-      (sum, record) => sum + (record.cries || []).length, 0
+      (sum, record) => sum + (record.cries || []).length,
+      0
     );
 
     const moodValues = records
@@ -575,18 +652,20 @@ async function renderReport() {
 
     document.getElementById("statDays").textContent = records.length;
     document.getElementById("statCries").textContent = totalCries;
+
     document.getElementById("statMood").textContent =
       averageMood === null ? "-" : showNumber(averageMood);
+
     document.getElementById("statCryDays").textContent = cryDays;
 
     document.getElementById("avgIntensity").textContent =
       avgIntensity === null ? "-" : `${showNumber(avgIntensity)} / 5`;
 
     document.getElementById("commonDuration").textContent =
-      countMostCommon(allCries.map(cry => cry.duration).filter(Boolean));
+      countMostCommon(
+        allCries.map(cry => cry.duration).filter(Boolean)
+      );
 
-    document.getElementById("commonTime").textContent =
-      countMostCommon(allCries.map(cry => getTimePeriod(cry.time)).filter(Boolean));
 
     renderMoodChart(records, daysInMonth);
     renderCryChart(records, daysInMonth);
@@ -631,6 +710,9 @@ async function renderReport() {
       document.getElementById(id).textContent = "-";
     });
 
+    document.getElementById("avgIntensity").textContent = "-";
+    document.getElementById("commonDuration").textContent = "-";
+    document.getElementById("monthlyNotes").innerHTML = "";
     document.getElementById("moodChart").innerHTML = "";
     document.getElementById("cryChart").innerHTML = "";
   }
