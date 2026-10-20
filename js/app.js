@@ -718,5 +718,26 @@ async function renderReport() {
   }
 }
 
+dateInput.addEventListener("change", async () => {
+  const selectedDate = dateInput.value;
+
+  if (!selectedDate) return;
+
+  try {
+    const snapshot = await getDoc(
+      doc(db, COLLECTION_NAME, selectedDate)
+    );
+
+    if (snapshot.exists()) {
+      fillForm(snapshot.data());
+    } else {
+      clearForm(selectedDate);
+    }
+  } catch (error) {
+    console.error("날짜별 기록 불러오기 오류:", error);
+    setMessage("해당 날짜의 기록을 불러오지 못했어요.", true);
+  }
+});
+
 // 최초 실행
 loadTodayRecord();
