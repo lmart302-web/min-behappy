@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f8edf2">
+  <title>min-behappy</title>
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="header">
+      <div>
+        <p class="eyebrow">DAILY SUPPORT RECORD</p>
+        <h1>min-behappy <span>♡</span></h1>
+        <p class="subtitle">하루의 마음을 차분히 기록해요.</p>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="메뉴">
+      <button class="tab active" data-view="write">기록하기</button>
+      <button class="tab" data-view="history">지난 기록</button>
+    </nav>
+
+    <section id="writeView" class="view">
+      <form id="recordForm">
+        <section class="panel">
+          <div class="section-heading">
+            <h2>하루 기록</h2>
+            <span class="hint">지원자 작성</span>
+          </div>
+          <label for="recordDate">기록 날짜</label>
+          <input id="recordDate" name="date" type="date" required>
+
+          <fieldset class="rating-field">
+            <legend>오늘의 우울감 <span class="required">필수</span></legend>
+            <p class="helper">지원자가 파악한 전반적인 우울감 정도를 선택해 주세요.</p>
+            <div class="rating-options" id="moodOptions">
+              <label class="rating-option"><input type="radio" name="mood" value="1" required><span>1</span></label>
+              <label class="rating-option"><input type="radio" name="mood" value="2"><span>2</span></label>
+              <label class="rating-option"><input type="radio" name="mood" value="3"><span>3</span></label>
+              <label class="rating-option"><input type="radio" name="mood" value="4"><span>4</span></label>
+              <label class="rating-option"><input type="radio" name="mood" value="5"><span>5</span></label>
+            </div>
+            <div class="scale-labels"><span>낮음</span><span>높음</span></div>
+          </fieldset>
+
+          <div class="section-heading crying-heading">
+            <div>
+              <h3>울음 기록</h3>
+              <p class="helper">울음이 발생할 때마다 개별로 추가해 주세요.</p>
+            </div>
+            <span class="count-pill"><strong id="cryCount">0</strong>회</span>
+          </div>
+          <div id="cryList" class="cry-list"></div>
+          <button type="button" id="addCry" class="button button-secondary add-button">＋ 울음 추가</button>
+
+          <label for="dailyNote">하루 메모 <span class="optional">선택</span></label>
+          <textarea id="dailyNote" name="note" rows="3" placeholder="필요한 내용이 있을 때만 간단히 기록해 주세요."></textarea>
+        </section>
+        <div class="form-actions">
+          <button type="button" id="resetForm" class="button button-quiet">새 기록</button>
+          <button type="submit" class="button button-primary" id="saveButton">기록 저장</button>
+        </div>
+        <p id="formMessage" class="form-message" role="status"></p>
+      </form>
+    </section>
+
+    <section id="historyView" class="view hidden">
+      <div class="panel">
+        <div class="section-heading">
+          <h2>지난 기록</h2>
+          <span class="hint">이 기기에 저장된 기록</span>
+        </div>
+        <div id="historyList" class="history-list"></div>
+      </div>
+    </section>
+
+    <footer>
+      <p>개인 기록용 · 기록 내용은 신중하게 관리해 주세요.</p>
+      <p class="storage-note">현재 버전은 이 브라우저에 저장됩니다. 다른 기기와 공유하려면 Firebase 연결이 필요합니다.</p>
+    </footer>
+  </main>
+  <template id="cryTemplate">
+    <article class="cry-card">
+      <div class="cry-card-top">
+        <h4 class="cry-title">울음 1회차</h4>
+        <button type="button" class="remove-cry" aria-label="울음 기록 삭제">삭제</button>
+      </div>
+      <div class="cry-fields">
+        <div>
+          <label class="field-label">발생 시각</label>
+          <input class="cry-time" type="time" required>
+        </div>
+        <div>
+          <label class="field-label">지속 시간</label>
+          <select class="cry-duration" required>
+            <option value="">선택해 주세요</option>
+            <option value="5분 미만">5분 미만</option>
+            <option value="5~10분">5~10분</option>
+            <option value="10~30분">10~30분</option>
+            <option value="30분~1시간">30분~1시간</option>
+            <option value="1시간 이상">1시간 이상</option>
+          </select>
+        </div>
+      </div>
+      <fieldset class="rating-field cry-intensity-field">
+        <legend>울음 강도</legend>
+        <div class="rating-options cry-intensity-options">
+          <label class="rating-option"><input type="radio" value="1" required><span>1</span></label>
+          <label class="rating-option"><input type="radio" value="2"><span>2</span></label>
+          <label class="rating-option"><input type="radio" value="3"><span>3</span></label>
+          <label class="rating-option"><input type="radio" value="4"><span>4</span></label>
+          <label class="rating-option"><input type="radio" value="5"><span>5</span></label>
+        </div>
+        <div class="scale-labels"><span>약함</span><span>강함</span></div>
+      </fieldset>
+    </article>
+  </template>
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>
