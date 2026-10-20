@@ -3,6 +3,7 @@ import { db } from "./firebase.js";
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   setDoc,
   deleteDoc
@@ -19,11 +20,16 @@ const message = document.getElementById("formMessage");
 const historyList = document.getElementById("historyList");
 const writeView = document.getElementById("writeView");
 const historyView = document.getElementById("historyView");
+const reportView = document.getElementById("reportView");
+const saveButton = document.getElementById("saveButton");
 
 let editingDate = null;
+let reportMonth = localDateString().slice(0, 7);
+let reportRequestId = 0;
 
 function localDateString(date = new Date()) {
   const offset = date.getTimezoneOffset();
+
   return new Date(date.getTime() - offset * 60000)
     .toISOString()
     .slice(0, 10);
@@ -43,18 +49,16 @@ function setMessage(text, isError = false) {
 }
 
 function setView(view) {
-  const isHistory = view === "history";
-
-  writeView.classList.toggle("hidden", isHistory);
-  historyView.classList.toggle("hidden", !isHistory);
+  writeView.classList.toggle("hidden", view !== "write");
+  historyView.classList.toggle("hidden", view !== "history");
+  reportView.classList.toggle("hidden", view !== "report");
 
   document.querySelectorAll(".tab").forEach(button => {
     button.classList.toggle("active", button.dataset.view === view);
   });
 
-  if (isHistory) {
-    renderHistory();
-  }
+  if (view === "history") renderHistory();
+  if (view === "report") renderReport();
 }
 
 document.querySelectorAll(".tab").forEach(button => {
@@ -95,23 +99,19 @@ function addCry(data = {}) {
   renumberCryCards();
 }
 
-function clearForm() {
+function clearForm(date = localDateString()) {
   form.reset();
   cryList.innerHTML = "";
   editingDate = null;
-  dateInput.value = localDateString();
-
-  document.getElementById("saveButton").textContent = "기록 저장";
-
+  dateInput.value = date;
+  saveButton.textContent = "기록 저장";
   setMessage("");
   renumberCryCards();
 }
 
-function loadRecord(record) {
-  clearForm();
-
+function fillForm(record) {
+  clearForm(record.date);
   editingDate = record.date;
-  dateInput.value = record.date;
 
   const mood = form.querySelector(
     `input[name="mood"][value="${record.mood}"]`
@@ -123,10 +123,32 @@ function loadRecord(record) {
 
   (record.cries || []).forEach(cry => addCry(cry));
 
-  document.getElementById("saveButton").textContent = "수정 내용 저장";
+  saveButton.textContent = "수정 내용 저장";
+}
 
+function loadRecord(record) {
+  fillForm(record);
   setView("write");
   window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+async function loadTodayRecord() {
+  const today = localDateString();
+  dateInput.value = today;
+
+  try {
+    const snapshot = await getDoc(doc(db, COLLECTION_NAME, today));
+
+    if (snapshot.exists()) {
+      fillForm(snapshot.data());
+    } else {
+      clearForm(today);
+    }
+  } catch (error) {
+    console.error("오늘 기록 불러오기 오류:", error);
+    clearForm(today);
+    setMessage("오늘 기록을 불러오지 못했어요. Firebase 설정과 보안 규칙을 확인해 주세요.", true);
+  }
 }
 
 function collectRecord() {
@@ -144,9 +166,7 @@ function collectRecord() {
 
   return {
     date: dateInput.value,
-    mood: Number(
-      form.querySelector('input[name="mood"]:checked')?.value || 0
-    ),
+    mood: Number(form.querySelector('input[name="mood"]:checked')?.value || 0),
     cries,
     cryCount: cries.length,
     note: document.getElementById("dailyNote").value.trim(),
@@ -163,7 +183,7 @@ form.addEventListener("submit", async event => {
     return;
   }
 
-  const saveButton = document.getElementById("saveButton");
+  let saved = false;
 
   try {
     const record = collectRecord();
@@ -178,38 +198,34 @@ form.addEventListener("submit", async event => {
     saveButton.disabled = true;
     saveButton.textContent = "저장 중...";
 
-    // 날짜를 문서 ID로 사용하여 날짜별 기록을 저장
     await setDoc(doc(db, COLLECTION_NAME, record.date), record);
 
-    // 수정하면서 날짜가 변경된 경우 이전 날짜의 문서 삭제
     if (previousDate && previousDate !== record.date) {
       await deleteDoc(doc(db, COLLECTION_NAME, previousDate));
     }
 
     editingDate = record.date;
-    saveButton.textContent = "수정 내용 저장";
-
+    saved = true;
     setMessage("기록을 저장했어요.");
+
+    // 리포트 통계도 최신 기록으로 갱신
+    setView("history");
   } catch (error) {
     console.error("기록 저장 오류:", error);
+
     setMessage(
-      "기록을 저장하지 못했어요. Firebase 설정과 보안 규칙을 확인해 주세요.",
+      error.message?.startsWith("각 울음 기록")
+        ? error.message
+        : "기록을 저장하지 못했어요. Firebase 설정과 보안 규칙을 확인해 주세요.",
       true
     );
   } finally {
     saveButton.disabled = false;
-
-    if (!editingDate) {
-      saveButton.textContent = "기록 저장";
-    } else {
-      saveButton.textContent = "수정 내용 저장";
-    }
+    saveButton.textContent = editingDate ? "수정 내용 저장" : "기록 저장";
   }
 });
 
 document.getElementById("addCry").addEventListener("click", () => addCry());
-
-document.getElementById("resetForm").addEventListener("click", clearForm);
 
 function formatDate(date) {
   const [year, month, day] = date.split("-");
@@ -217,8 +233,7 @@ function formatDate(date) {
 }
 
 async function renderHistory() {
-  historyList.innerHTML =
-    '<div class="empty-state">기록을 불러오는 중...</div>';
+  historyList.innerHTML = '<div class="empty-state">기록을 불러오는 중...</div>';
 
   try {
     const records = await readRecords();
@@ -251,7 +266,7 @@ async function renderHistory() {
 
       const cryBadge = document.createElement("span");
       cryBadge.className = "small-badge";
-      cryBadge.textContent = `울음 ${record.cries?.length || 0}회`;
+      cryBadge.textContent = `울음 ${(record.cries || []).length}회`;
 
       badges.append(moodBadge, cryBadge);
       main.append(date, badges);
@@ -260,7 +275,6 @@ async function renderHistory() {
       if (record.cries?.length) {
         const cryDetails = document.createElement("div");
         cryDetails.className = "history-cry";
-
         cryDetails.textContent = record.cries
           .map((cry, index) =>
             `${index + 1}회차 ${cry.time} · ${cry.duration} · 강도 ${cry.intensity}/5`
@@ -312,10 +326,315 @@ async function renderHistory() {
     });
   } catch (error) {
     console.error("기록 불러오기 오류:", error);
-
     historyList.innerHTML =
       '<div class="empty-state">기록을 불러오지 못했어요. Firebase 설정과 보안 규칙을 확인해 주세요.</div>';
   }
 }
 
-dateInput.value = localDateString();
+// 월간 리포트
+
+function changeMonth(amount) {
+  const [year, month] = reportMonth.split("-").map(Number);
+  const date = new Date(year, month - 1 + amount, 1);
+
+  reportMonth =
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
+  renderReport();
+}
+
+document.getElementById("prevMonth").addEventListener("click", () => changeMonth(-1));
+document.getElementById("nextMonth").addEventListener("click", () => changeMonth(1));
+
+function countMostCommon(values) {
+  if (!values.length) return "-";
+
+  const counts = new Map();
+
+  values.forEach(value => {
+    counts.set(value, (counts.get(value) || 0) + 1);
+  });
+
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])[0][0];
+}
+
+function getTimePeriod(time) {
+  if (!time) return null;
+
+  const hour = Number(time.split(":")[0]);
+
+  if (hour >= 5 && hour < 12) return "오전";
+  if (hour >= 12 && hour < 18) return "오후";
+  if (hour >= 18 && hour < 22) return "저녁";
+  return "밤";
+}
+
+function showNumber(value) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function renderMoodChart(records, daysInMonth) {
+  const container = document.getElementById("moodChart");
+  const points = records
+    .filter(record => Number(record.mood) >= 1 && Number(record.mood) <= 5)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (!points.length) {
+    container.innerHTML = '<p class="empty-state">이 달에는 우울감 기록이 없어요.</p>';
+    return;
+  }
+
+  const width = 340;
+  const height = 190;
+  const left = 30;
+  const right = 12;
+  const top = 18;
+  const bottom = 30;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+
+  const x = day => left + ((day - 1) / Math.max(daysInMonth - 1, 1)) * plotWidth;
+  const y = score => top + ((5 - score) / 4) * plotHeight;
+
+  const grid = [1, 2, 3, 4, 5].map(score => `
+    <line x1="${left}" y1="${y(score)}" x2="${width - right}" y2="${y(score)}"
+      stroke="currentColor" stroke-opacity=".13"/>
+    <text x="${left - 10}" y="${y(score) + 4}" text-anchor="middle"
+      font-size="10" fill="currentColor">${score}</text>
+  `).join("");
+
+  const labels = [1, Math.ceil(daysInMonth / 2), daysInMonth]
+    .filter((day, index, array) => array.indexOf(day) === index)
+    .map(day => `
+      <text x="${x(day)}" y="${height - 8}" text-anchor="middle"
+        font-size="10" fill="currentColor">${day}일</text>
+    `).join("");
+
+  const line = points.map((record, index) => {
+    const day = Number(record.date.slice(8, 10));
+    return `${index ? "L" : "M"} ${x(day)} ${y(Number(record.mood))}`;
+  }).join(" ");
+
+  const circles = points.map(record => {
+    const day = Number(record.date.slice(8, 10));
+    const score = Number(record.mood);
+
+    return `<circle cx="${x(day)}" cy="${y(score)}" r="3.5"
+      fill="#c66c94">
+      <title>${day}일 · 우울감 ${score}/5</title>
+    </circle>`;
+  }).join("");
+
+  container.innerHTML = `
+    <svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img"
+      aria-label="날짜별 우울감 점수 그래프">
+      ${grid}
+      <path d="${line}" fill="none" stroke="#c66c94" stroke-width="2.5"
+        stroke-linecap="round" stroke-linejoin="round"/>
+      ${circles}
+      ${labels}
+    </svg>
+  `;
+}
+
+function renderCryChart(records, daysInMonth) {
+  const container = document.getElementById("cryChart");
+  const recordMap = new Map(records.map(record => [record.date, record]));
+
+  const values = Array.from({ length: daysInMonth }, (_, index) => {
+    const day = index + 1;
+    const date = `${reportMonth}-${String(day).padStart(2, "0")}`;
+
+    if (!recordMap.has(date)) {
+      return { day, count: null };
+    }
+
+    return {
+      day,
+      count: (recordMap.get(date).cries || []).length
+    };
+  });
+
+  if (!records.length) {
+    container.innerHTML = '<p class="empty-state">이 달에는 저장된 기록이 없어요.</p>';
+    return;
+  }
+
+  const width = 340;
+  const height = 190;
+  const left = 28;
+  const right = 10;
+  const top = 15;
+  const bottom = 30;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+  const maxCount = Math.max(1, ...values.map(item => item.count ?? 0));
+  const slot = plotWidth / daysInMonth;
+  const barWidth = Math.max(2, Math.min(10, slot * 0.65));
+
+  const grid = Array.from({ length: 4 }, (_, index) => {
+    const value = Math.ceil(maxCount * index / 3);
+    const y = top + plotHeight - (value / maxCount) * plotHeight;
+
+    return `
+      <line x1="${left}" y1="${y}" x2="${width - right}" y2="${y}"
+        stroke="currentColor" stroke-opacity=".12"/>
+      <text x="${left - 7}" y="${y + 4}" text-anchor="middle"
+        font-size="9" fill="currentColor">${value}</text>
+    `;
+  }).join("");
+
+  const bars = values.map(item => {
+    const x = left + (item.day - 0.5) * slot - barWidth / 2;
+
+    if (item.count === null) {
+      return `<line x1="${x + barWidth / 2}" y1="${top + plotHeight - 3}"
+        x2="${x + barWidth / 2}" y2="${top + plotHeight}"
+        stroke="currentColor" stroke-opacity=".2">
+        <title>${item.day}일 · 기록 없음</title>
+      </line>`;
+    }
+
+    const barHeight = item.count === 0 ? 0 : (item.count / maxCount) * plotHeight;
+    const y = top + plotHeight - barHeight;
+
+    return `<rect x="${x}" y="${y}" width="${barWidth}"
+      height="${Math.max(item.count === 0 ? 0 : 2, barHeight)}"
+      rx="2" fill="#c66c94" fill-opacity="${item.count === 0 ? 0.18 : 0.85}">
+      <title>${item.day}일 · 울음 ${item.count}회</title>
+    </rect>`;
+  }).join("");
+
+  const labels = [1, Math.ceil(daysInMonth / 2), daysInMonth]
+    .filter((day, index, array) => array.indexOf(day) === index)
+    .map(day => `
+      <text x="${left + (day - 0.5) * slot}" y="${height - 8}"
+        text-anchor="middle" font-size="10" fill="currentColor">${day}일</text>
+    `).join("");
+
+  container.innerHTML = `
+    <svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img"
+      aria-label="날짜별 울음 횟수 그래프">
+      ${grid}
+      ${bars}
+      ${labels}
+    </svg>
+    <p class="chart-legend">
+      <span class="legend-dot"></span> 기록한 날
+      <span class="legend-dash"></span> 기록 없는 날
+    </p>
+  `;
+}
+
+async function renderReport() {
+  const requestId = ++reportRequestId;
+  const [year, month] = reportMonth.split("-").map(Number);
+  const daysInMonth = new Date(year, month, 0).getDate();
+
+  document.getElementById("reportMonth").textContent = `${year}년 ${month}월`;
+  document.getElementById("reportStatus").textContent = "기록을 분석하고 있어요.";
+
+  try {
+    const allRecords = await readRecords();
+
+    // 월이 빠르게 바뀌면 가장 최근 요청 결과만 표시
+    if (requestId !== reportRequestId) return;
+
+    const records = allRecords
+      .filter(record => typeof record.date === "string" &&
+        record.date.startsWith(`${reportMonth}-`))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const totalCries = records.reduce(
+      (sum, record) => sum + (record.cries || []).length, 0
+    );
+
+    const moodValues = records
+      .map(record => Number(record.mood))
+      .filter(mood => mood >= 1 && mood <= 5);
+
+    const averageMood = moodValues.length
+      ? moodValues.reduce((sum, mood) => sum + mood, 0) / moodValues.length
+      : null;
+
+    const cryDays = records.filter(
+      record => (record.cries || []).length > 0
+    ).length;
+
+    const allCries = records.flatMap(record => record.cries || []);
+
+    const validIntensities = allCries
+      .map(cry => Number(cry.intensity))
+      .filter(value => value >= 1 && value <= 5);
+
+    const avgIntensity = validIntensities.length
+      ? validIntensities.reduce((sum, value) => sum + value, 0) /
+        validIntensities.length
+      : null;
+
+    document.getElementById("statDays").textContent = records.length;
+    document.getElementById("statCries").textContent = totalCries;
+    document.getElementById("statMood").textContent =
+      averageMood === null ? "-" : showNumber(averageMood);
+    document.getElementById("statCryDays").textContent = cryDays;
+
+    document.getElementById("avgIntensity").textContent =
+      avgIntensity === null ? "-" : `${showNumber(avgIntensity)} / 5`;
+
+    document.getElementById("commonDuration").textContent =
+      countMostCommon(allCries.map(cry => cry.duration).filter(Boolean));
+
+    document.getElementById("commonTime").textContent =
+      countMostCommon(allCries.map(cry => getTimePeriod(cry.time)).filter(Boolean));
+
+    renderMoodChart(records, daysInMonth);
+    renderCryChart(records, daysInMonth);
+
+    const notesContainer = document.getElementById("monthlyNotes");
+    notesContainer.innerHTML = "";
+
+    const notes = records.filter(record => record.note?.trim());
+
+    if (!notes.length) {
+      notesContainer.innerHTML =
+        '<p class="empty-state">이 달에 작성한 메모가 없어요.</p>';
+    } else {
+      notes.forEach(record => {
+        const entry = document.createElement("article");
+        entry.className = "monthly-note";
+
+        const date = document.createElement("strong");
+        date.textContent = formatDate(record.date);
+
+        const text = document.createElement("p");
+        text.textContent = record.note;
+
+        entry.append(date, text);
+        notesContainer.append(entry);
+      });
+    }
+
+    document.getElementById("reportStatus").textContent =
+      records.length
+        ? `${records.length}일의 기록을 분석했어요. 기록이 없는 날은 우울감 평균에서 제외했어요.`
+        : "선택한 달에는 저장된 기록이 없어요.";
+  } catch (error) {
+    console.error("월간 리포트 오류:", error);
+
+    if (requestId !== reportRequestId) return;
+
+    document.getElementById("reportStatus").textContent =
+      "리포트를 불러오지 못했어요. Firebase 설정과 보안 규칙을 확인해 주세요.";
+
+    ["statDays", "statCries", "statMood", "statCryDays"].forEach(id => {
+      document.getElementById(id).textContent = "-";
+    });
+
+    document.getElementById("moodChart").innerHTML = "";
+    document.getElementById("cryChart").innerHTML = "";
+  }
+}
+
+// 최초 실행
+loadTodayRecord();
