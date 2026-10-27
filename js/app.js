@@ -121,10 +121,13 @@ async function refreshData() {
 async function saveDoc(collectionName, id, data) {
   const finalId = id || newId();
 
+  const now = new Date().toISOString();
+
   await setDoc(doc(db, collectionName, finalId), {
     ...data,
     id: finalId,
-    updatedAt: new Date().toISOString()
+    createdAt: data.createdAt || now,
+    updatedAt: now
   });
 
   return finalId;
@@ -458,8 +461,7 @@ async function renderCrying() {
 }
 
 // 체중 기록
-// 같은 날짜에 저장된 기록이 있으면 기존 문서를 갱신하고,
-// 과거에 같은 날짜로 중복 저장된 문서도 함께 정리한다.
+// 같은 날짜의 중복 기록을 정리하고 날짜별 한 건만 유지한다.
 
 $("weightForm").addEventListener("submit", async e => {
   e.preventDefault();
@@ -626,6 +628,7 @@ async function renderWeight() {
   const list = $("weightList");
   list.innerHTML = "";
 
+  // 기존처럼 전체 체중 기록 목록을 표시한다.
   const all = sortNewest(cache.weight);
 
   if (!all.length) {
@@ -748,6 +751,91 @@ $("cancelMedicationEdit").addEventListener("click", () => {
   resetMedicationForm();
 });
 
+// 복용 상태 선택란에서 약물 삭제
+// 삭제 이력을 먼저 저장하고, 그 다음 실제 약물 정보를 삭제한다.
+
+$("medStatus").addEventListener("change", async e => {
+  if (e.target.value !== "delete") return;
+
+  const select = e.target;
+  const id = $("medicationForm").elements.id.value;
+  const med = cache.meds.find(m => m.id === id);
+
+  if (!med) {
+    alert("먼저 삭제할 약물을 선택해 주세요.");
+    select.value = "true";
+    return;
+  }
+
+  if (!confirm(
+    `${med.name} 약물 정보를 삭제할까요?\n\n` +
+    "삭제 이력은 보관되며 기존 복용 기록과 변경 이력은 유지됩니다."
+  )) {
+    select.value = med.active === false ? "false" : "true";
+    return;
+  }
+
+  select.disabled = true;
+
+  try {
+    const deletedAt = new Date().toISOString();
+    const deletedDate = localDate();
+
+    // 삭제 이력을 별도 문서로 저장한다.
+    await saveDoc(C.changes, newId(), {
+      date: deletedDate,
+      deletedAt,
+      medicationId: med.id,
+      medicationName: med.name || "이름 없는 약물",
+      action: "삭제",
+      dose: med.dose || "",
+      startDate: med.startDate || "",
+      active: med.active !== false,
+      note: [
+        "약물 삭제",
+        `약물명: ${med.name || "미입력"}`,
+        `용량·복용법: ${med.dose || "미입력"}`,
+        `시작 날짜: ${formatDate(med.startDate)}`,
+        `삭제 당시 상태: ${med.active === false ? "복용 중단" : "복용 중"}`
+      ].join("\n")
+    });
+
+    // 기존 복용 기록과 변경 이력은 삭제하지 않는다.
+    await removeDoc(C.meds, id);
+    await refreshData();
+
+    resetMedicationForm();
+    renderMedicationSelector();
+    await renderMedication();
+
+    showMessage(
+      "medicationMessage",
+      "약물을 삭제하고 삭제 이력을 저장했어요."
+    );
+  } catch (err) {
+    console.error(err);
+
+    // 삭제 이력 저장 후 실제 삭제가 실패했을 수도 있으므로 데이터를 다시 읽는다.
+    await refreshData().catch(console.error);
+    renderMedicationSelector();
+
+    const currentMed = cache.meds.find(m => m.id === id);
+
+    if (currentMed) {
+      $("medManageSelect").value = id;
+      selectMedicationForEdit(id);
+    } else {
+      resetMedicationForm();
+    }
+
+    alert(
+      "약물 삭제 과정에서 문제가 발생했어요. 약물 목록과 변경 이력을 확인해 주세요."
+    );
+  } finally {
+    select.disabled = false;
+  }
+});
+
 // 약물 등록 및 수정 시 변경 이력을 함께 저장한다.
 
 $("medicationForm").addEventListener("submit", async e => {
@@ -758,6 +846,10 @@ $("medicationForm").addEventListener("submit", async e => {
   btn.disabled = true;
 
   try {
+    if (f.elements.active.value === "delete") {
+      throw new Error("삭제는 복용 상태 선택란에서 진행해 주세요.");
+    }
+
     const editingId = f.elements.id.value;
     const existing = editingId
       ? cache.meds.find(m => m.id === editingId)
@@ -778,7 +870,6 @@ $("medicationForm").addEventListener("submit", async e => {
     const now = localDate();
 
     if (!existing) {
-      // 신규 약물 등록
       await saveDoc(C.meds, id, data);
 
       await saveDoc(C.changes, newId(), {
@@ -787,13 +878,13 @@ $("medicationForm").addEventListener("submit", async e => {
         medicationName: data.name,
         action: "등록",
         dose: data.dose,
+        startDate: data.startDate,
+        active: data.active,
         note:
           `약물 등록 · 용량·복용법: ${data.dose || "미입력"} · ` +
           `시작 날짜: ${formatDate(data.startDate)} · ` +
           `상태: ${data.active ? "복용 중" : "복용 중단"}`
       });
-
-      showMessage("medicationMessage", "약물을 등록하고 변경 이력을 저장했어요.");
     } else {
       const nameChanged = existing.name !== data.name;
       const doseChanged = (existing.dose || "") !== data.dose;
@@ -815,11 +906,15 @@ $("medicationForm").addEventListener("submit", async e => {
         }
 
         if (doseChanged) {
-          details.push(`용량·복용법: ${existing.dose || "미입력"} → ${data.dose || "미입력"}`);
+          details.push(
+            `용량·복용법: ${existing.dose || "미입력"} → ${data.dose || "미입력"}`
+          );
         }
 
         if (startChanged) {
-          details.push(`시작 날짜: ${formatDate(existing.startDate)} → ${formatDate(data.startDate)}`);
+          details.push(
+            `시작 날짜: ${formatDate(existing.startDate)} → ${formatDate(data.startDate)}`
+          );
         }
 
         await saveDoc(C.changes, newId(), {
@@ -828,6 +923,8 @@ $("medicationForm").addEventListener("submit", async e => {
           medicationName: data.name,
           action: "정보 수정",
           dose: data.dose,
+          startDate: data.startDate,
+          active: data.active,
           note: details.join("\n")
         });
       }
@@ -839,11 +936,13 @@ $("medicationForm").addEventListener("submit", async e => {
           medicationName: data.name,
           action: data.active ? "복용 재개" : "복용 중단",
           dose: data.dose,
-          note: `복용 상태 변경: ${existing.active === false ? "복용 중단" : "복용 중"} → ${data.active ? "복용 중" : "복용 중단"}`
+          startDate: data.startDate,
+          active: data.active,
+          note:
+            `복용 상태 변경: ${existing.active === false ? "복용 중단" : "복용 중"} → ` +
+            `${data.active ? "복용 중" : "복용 중단"}`
         });
       }
-
-      showMessage("medicationMessage", "약물 정보를 수정하고 변경 이력을 저장했어요.");
     }
 
     await refreshData();
@@ -852,7 +951,6 @@ $("medicationForm").addEventListener("submit", async e => {
     renderMedicationSelector();
     await renderMedication();
 
-    // 화면 갱신 뒤 완료 메시지를 유지한다.
     showMessage(
       "medicationMessage",
       existing
@@ -869,49 +967,6 @@ $("medicationForm").addEventListener("submit", async e => {
   } finally {
     btn.disabled = false;
   }
-});
-
-// 약물 삭제 버튼: 선택한 약물 정보만 삭제하며 기존 복용 기록과 변경 이력은 유지한다.
-
-const deleteMedicationButton = document.createElement("button");
-deleteMedicationButton.type = "button";
-deleteMedicationButton.id = "deleteMedicationButton";
-deleteMedicationButton.className = "button button-secondary";
-deleteMedicationButton.textContent = "선택한 약물 삭제";
-deleteMedicationButton.hidden = true;
-
-$("medicationForm").querySelector(".form-actions").append(deleteMedicationButton);
-
-deleteMedicationButton.addEventListener("click", async () => {
-  const id = $("medicationForm").elements.id.value;
-  const med = cache.meds.find(m => m.id === id);
-
-  if (!med) return;
-
-  if (!confirm(`${med.name} 약물 정보를 삭제할까요? 기존 복용 기록과 변경 이력은 유지됩니다.`)) {
-    return;
-  }
-
-  deleteMedicationButton.disabled = true;
-
-  try {
-    await removeDoc(C.meds, id);
-    await refreshData();
-    resetMedicationForm();
-    renderMedicationSelector();
-    await renderMedication();
-    showMessage("medicationMessage", "약물 정보를 삭제했어요.");
-  } catch (err) {
-    console.error(err);
-    showMessage("medicationMessage", "약물을 삭제하지 못했어요.", true);
-  } finally {
-    deleteMedicationButton.disabled = false;
-  }
-});
-
-// 선택 여부에 따라 삭제 버튼을 표시한다.
-$("medManageSelect").addEventListener("change", () => {
-  deleteMedicationButton.hidden = !$("medManageSelect").value;
 });
 
 // 복용 체크
@@ -976,7 +1031,9 @@ $("medicationLogForm").addEventListener("submit", async e => {
       ...$("medicationChecks").querySelectorAll('input[type="checkbox"]')
     ];
 
-    if (!checks.length) throw new Error("먼저 복용 중인 약물을 등록해 주세요.");
+    if (!checks.length) {
+      throw new Error("먼저 복용 중인 약물을 등록해 주세요.");
+    }
 
     const note = $("medLogNote").value.trim();
 
@@ -1011,27 +1068,55 @@ $("medicationLogForm").addEventListener("submit", async e => {
 });
 
 // 약물 변경 이력
+// 월 선택은 약물 변경 이력과 복용 기록 조회에 공통 적용된다.
 
 async function renderMedicationChanges() {
   const box = $("medicationChanges");
   box.innerHTML = "";
 
-  const changes = sortNewest(cache.changes);
+const changes = cache.changes
+  .filter(r =>
+    (r.date || "").startsWith(months.medicationLogs)
+  )
+  .sort((a, b) => {
+    const timeA = a.createdAt || a.updatedAt || "";
+    const timeB = b.createdAt || b.updatedAt || "";
+
+    if (timeA !== timeB) {
+      return timeB.localeCompare(timeA);
+    }
+
+    return (b.id || "").localeCompare(a.id || "");
+  });
 
   if (!changes.length) {
-    showEmpty("medicationChanges", "약물 변경 이력이 없어요.");
+    showEmpty("medicationChanges", "선택한 달에 약물 변경 이력이 없어요.");
     return;
   }
 
   changes.forEach(r => {
+    const details = [];
+
+    details.push(
+      r.dose ? `용량·복용법: ${r.dose}` : "용량·복용법 미입력"
+    );
+
+    if (r.action === "삭제") {
+      details.push(
+        `삭제 당시 상태: ${r.active === false ? "복용 중단" : "복용 중"}`
+      );
+
+      if (r.startDate) {
+        details.push(`시작 날짜: ${formatDate(r.startDate)}`);
+      }
+    }
+
     box.append(
       itemCard({
         title:
           `${formatDate(r.date)} · ` +
           `${r.medicationName || "약물"} · ${r.action || "변경"}`,
-        meta: r.dose
-          ? `용량·복용법: ${r.dose}`
-          : "용량·복용법 미입력",
+        meta: details.join(" · "),
         context: r.note,
         actions: [
           {
@@ -1046,15 +1131,19 @@ async function renderMedicationChanges() {
 }
 
 // 복용 기록 조회
+// 선택한 월에 해당하는 복용 기록만 표시한다.
 
 async function renderMedicationLogHistory() {
   const logBox = $("medicationLogHistory");
   logBox.innerHTML = "";
 
-  $("medicationLogsMonth").textContent = monthLabel(months.medicationLogs);
+  $("medicationLogsMonth").textContent =
+    monthLabel(months.medicationLogs);
 
   const logs = sortNewest(
-    cache.logs.filter(r => (r.date || "").startsWith(months.medicationLogs))
+    cache.logs.filter(r =>
+      (r.date || "").startsWith(months.medicationLogs)
+    )
   );
 
   if (!logs.length) {
@@ -1117,11 +1206,11 @@ async function renderMedicationLogHistory() {
 }
 
 async function renderMedication() {
+  $("medicationLogsMonth").textContent =
+    monthLabel(months.medicationLogs);
+
   renderMedicationSelector();
   renderMedicationChecks();
-
-  const selectedId = $("medManageSelect").value;
-  deleteMedicationButton.hidden = !selectedId;
 
   await renderMedicationChanges();
   await renderMedicationLogHistory();
