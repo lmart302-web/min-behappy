@@ -1,743 +1,1401 @@
 import { db } from "./firebase.js";
+
 import {
   collection,
   doc,
-  getDoc,
   getDocs,
   setDoc,
   deleteDoc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-const COLLECTION_NAME = "records";
+const C = {
+  behavior: "behaviorEvents",
+  crying: "cryingEvents",
+  weight: "weights",
+  meds: "medications",
+  changes: "medicationChanges",
+  logs: "medicationLogs"
+};
 
-const form = document.getElementById("recordForm");
-const dateInput = document.getElementById("recordDate");
-const cryList = document.getElementById("cryList");
-const cryTemplate = document.getElementById("cryTemplate");
-const cryCount = document.getElementById("cryCount");
-const message = document.getElementById("formMessage");
-const historyList = document.getElementById("historyList");
-const writeView = document.getElementById("writeView");
-const historyView = document.getElementById("historyView");
-const reportView = document.getElementById("reportView");
-const saveButton = document.getElementById("saveButton");
+const $ = id => document.getElementById(id);
 
-let editingDate = null;
-let historyMonth = localDateString().slice(0, 7);
-let reportMonth = localDateString().slice(0, 7);
-let reportRequestId = 0;
-let historyRequestId = 0;
+const today = localDate();
 
-function localDateString(date = new Date()) {
-  const offset = date.getTimezoneOffset();
+const months = {
+  behavior: today.slice(0, 7),
+  crying: today.slice(0, 7),
+  weight: today.slice(0, 7)
+};
 
-  return new Date(date.getTime() - offset * 60000)
-    .toISOString()
-    .slice(0, 10);
+let cache = {
+  behavior: [],
+  crying: [],
+  weight: [],
+  meds: [],
+  changes: [],
+  logs: []
+};
+
+let activeView = "dashboard";
+
+// 날짜 및 공통 함수
+
+function localDate(d = new Date()) {
+  const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return x.toISOString().slice(0, 10);
 }
 
-async function readRecords() {
-  const snapshot = await getDocs(collection(db, COLLECTION_NAME));
-
-  return snapshot.docs
-    .map(item => item.data())
-    .sort((a, b) => b.date.localeCompare(a.date));
+function newId() {
+  return crypto.randomUUID
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-function setMessage(text, isError = false) {
-  message.textContent = text;
-  message.style.color = isError ? "#b4234d" : "";
+function monthLabel(m) {
+  const [y, mm] = m.split("-").map(Number);
+  return `${y}년 ${mm}월`;
 }
 
-function setView(view) {
-  writeView.classList.toggle("hidden", view !== "write");
-  historyView.classList.toggle("hidden", view !== "history");
-  reportView.classList.toggle("hidden", view !== "report");
-
-  document.querySelectorAll(".tab").forEach(button => {
-    button.classList.toggle("active", button.dataset.view === view);
-  });
-
-  if (view === "history") renderHistory();
-  if (view === "report") renderReport();
+function formatDate(s) {
+  if (!s) return "날짜 없음";
+  return s.replaceAll("-", ".");
 }
 
-document.querySelectorAll(".tab").forEach(button => {
-  button.addEventListener("click", () => setView(button.dataset.view));
-});
-
-// 울음 기록 입력
-
-function renumberCryCards() {
-  const cards = [...cryList.querySelectorAll(".cry-card")];
-
-  cards.forEach((card, index) => {
-    card.querySelector(".cry-title").textContent = `울음 ${index + 1}회차`;
-
-    card.querySelectorAll('input[type="radio"]').forEach(input => {
-      input.name = `cryIntensity${index}`;
-    });
-  });
-
-  cryCount.textContent = String(cards.length);
+function num(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
 }
 
-function addCry(data = {}) {
-  const fragment = cryTemplate.content.cloneNode(true);
-  const card = fragment.querySelector(".cry-card");
-
-  card.querySelector(".cry-time").value = data.time || "";
-  card.querySelector(".cry-duration").value = data.duration || "";
-
-  card.querySelectorAll('input[type="radio"]').forEach(input => {
-    input.checked = Number(input.value) === Number(data.intensity);
-  });
-
-  card.querySelector(".remove-cry").addEventListener("click", () => {
-    card.remove();
-    renumberCryCards();
-  });
-
-  cryList.appendChild(fragment);
-  renumberCryCards();
+function avg(arr) {
+  return arr.length
+    ? arr.reduce((a, b) => a + b, 0) / arr.length
+    : null;
 }
 
-function clearForm(date = localDateString()) {
-  form.reset();
-  cryList.innerHTML = "";
-  editingDate = null;
-  dateInput.value = date;
-  saveButton.textContent = "기록 저장";
-  setMessage("");
-  renumberCryCards();
+function displayNum(v, digits = 1) {
+  return v == null
+    ? "-"
+    : Number(v).toFixed(digits).replace(/\.0$/, "");
 }
 
-function fillForm(record) {
-  clearForm(record.date);
-  editingDate = record.date;
+function showMessage(id, text, error = false) {
+  const el = $(id);
+  if (!el) return;
 
-  const mood = form.querySelector(
-    `input[name="mood"][value="${record.mood}"]`
+  el.textContent = text;
+  el.style.color = error ? "#b4234d" : "";
+}
+
+function safeText(v) {
+  return String(v ?? "");
+}
+
+function sortNewest(arr) {
+  return [...arr].sort((a, b) =>
+    `${b.date || ""} ${b.time || ""}`.localeCompare(
+      `${a.date || ""} ${a.time || ""}`
+    )
+  );
+}
+
+// Firebase 데이터
+
+async function readCollection(name) {
+  const snap = await getDocs(collection(db, name));
+  return snap.docs.map(d => ({
+    id: d.id,
+    ...d.data()
+  }));
+}
+
+async function refreshData() {
+  const [
+    behavior,
+    crying,
+    weight,
+    meds,
+    changes,
+    logs
+  ] = await Promise.all(
+    Object.values(C).map(readCollection)
   );
 
-  if (mood) mood.checked = true;
-
-  document.getElementById("dailyNote").value = record.note || "";
-
-  (record.cries || []).forEach(cry => addCry(cry));
-
-  saveButton.textContent = "수정 내용 저장";
-}
-
-function loadRecord(record) {
-  fillForm(record);
-  setView("write");
-  window.scrollTo({ top: 0, behavior: "smooth" });
-}
-
-async function loadTodayRecord() {
-  const today = localDateString();
-  dateInput.value = today;
-
-  try {
-    const snapshot = await getDoc(doc(db, COLLECTION_NAME, today));
-
-    if (snapshot.exists()) {
-      fillForm(snapshot.data());
-    } else {
-      clearForm(today);
-    }
-  } catch (error) {
-    console.error("오늘 기록 불러오기 오류:", error);
-    clearForm(today);
-    setMessage(
-      "오늘 기록을 불러오지 못했어요. Firebase 설정과 보안 규칙을 확인해 주세요.",
-      true
-    );
-  }
-}
-
-function collectRecord() {
-  const cries = [...cryList.querySelectorAll(".cry-card")].map(card => ({
-    time: card.querySelector(".cry-time").value,
-    duration: card.querySelector(".cry-duration").value,
-    intensity: Number(
-      card.querySelector('input[type="radio"]:checked')?.value || 0
-    )
-  }));
-
-  if (cries.some(cry => !cry.time || !cry.duration || !cry.intensity)) {
-    throw new Error(
-      "각 울음 기록의 시각, 지속 시간, 강도를 모두 입력해 주세요."
-    );
-  }
-
-  return {
-    date: dateInput.value,
-    mood: Number(
-      form.querySelector('input[name="mood"]:checked')?.value || 0
-    ),
-    cries,
-    cryCount: cries.length,
-    note: document.getElementById("dailyNote").value.trim(),
-    updatedAt: new Date().toISOString()
+  cache = {
+    behavior,
+    crying,
+    weight,
+    meds,
+    changes,
+    logs
   };
 }
 
-// 기록 저장 및 수정
+async function saveDoc(collectionName, id, data) {
+  const finalId = id || newId();
 
-form.addEventListener("submit", async event => {
-  event.preventDefault();
-  setMessage("");
+  await setDoc(doc(db, collectionName, finalId), {
+    ...data,
+    id: finalId,
+    updatedAt: new Date().toISOString()
+  });
 
-  if (!dateInput.value) {
-    setMessage("기록 날짜를 선택해 주세요.", true);
+  return finalId;
+}
+
+async function removeDoc(collectionName, id) {
+  await deleteDoc(doc(db, collectionName, id));
+}
+
+// 화면 전환
+
+function setView(view) {
+  activeView = view;
+
+  document.querySelectorAll(".view").forEach(el => {
+    el.classList.toggle("hidden", el.id !== `${view}View`);
+  });
+
+  document.querySelectorAll(".tab").forEach(el => {
+    el.classList.toggle("active", el.dataset.view === view);
+  });
+
+  renderCurrent().catch(showLoadError);
+
+  window.scrollTo({
+    top: 0,
+    behavior: "smooth"
+  });
+}
+
+async function renderCurrent() {
+  if (activeView === "dashboard") await renderDashboard();
+  if (activeView === "behavior") await renderBehavior();
+  if (activeView === "crying") await renderCrying();
+  if (activeView === "weight") await renderWeight();
+  if (activeView === "medication") await renderMedication();
+}
+
+function showLoadError(error) {
+  console.error(error);
+  alert(
+    "데이터를 불러오지 못했어요. Firebase 설정과 Firestore 보안 규칙을 확인해 주세요."
+  );
+}
+
+document.querySelectorAll(".tab").forEach(b => {
+  b.addEventListener("click", () => setView(b.dataset.view));
+});
+
+document.querySelectorAll("[data-go]").forEach(b => {
+  b.addEventListener("click", () => setView(b.dataset.go));
+});
+
+document.querySelectorAll("[data-month-target]").forEach(b => {
+  b.addEventListener("click", () =>
+    changeMonth(
+      b.dataset.monthTarget,
+      Number(b.dataset.delta)
+    )
+  );
+});
+
+function changeMonth(key, delta) {
+  const [y, m] = months[key].split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+
+  months[key] =
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+  renderCurrent().catch(showLoadError);
+}
+
+// 공통 기록 카드
+
+function itemCard({
+  title,
+  meta,
+  context,
+  actions = []
+}) {
+  const article = document.createElement("article");
+  article.className = "record-item";
+
+  const top = document.createElement("div");
+  top.className = "record-top";
+
+  const main = document.createElement("div");
+
+  const t = document.createElement("div");
+  t.className = "record-title";
+  t.textContent = title;
+
+  const m = document.createElement("div");
+  m.className = "record-meta";
+  m.textContent = meta;
+
+  main.append(t, m);
+  top.append(main);
+  article.append(top);
+
+  if (context) {
+    const c = document.createElement("p");
+    c.className = "record-context";
+    c.textContent = context;
+    article.append(c);
+  }
+
+  if (actions.length) {
+    const row = document.createElement("div");
+    row.className = "record-actions";
+
+    actions.forEach(a => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = a.label;
+
+      if (a.danger) {
+        b.className = "delete";
+      }
+
+      b.addEventListener("click", a.onClick);
+      row.append(b);
+    });
+
+    article.append(row);
+  }
+
+  return article;
+}
+
+function showEmpty(
+  containerId,
+  message = "저장된 기록이 없어요."
+) {
+  const container = $(containerId);
+  if (!container) return;
+
+  container.innerHTML = "";
+
+  const p = document.createElement("div");
+  p.className = "empty-state";
+  p.textContent = message;
+
+  container.append(p);
+}
+
+function monthRecords(type) {
+  return sortNewest(
+    cache[type].filter(r =>
+      (r.date || "").startsWith(months[type])
+    )
+  );
+}
+
+// 도전적 행동 및 울음 기록
+
+function eventFormData(form, type) {
+  const fd = new FormData(form);
+
+  return {
+    date: fd.get("date"),
+    time: fd.get("time"),
+    type: fd.get("type"),
+    intensity: num(fd.get("intensity")),
+    duration: num(fd.get("duration")),
+    context: String(fd.get("context") || "").trim(),
+    category: type
+  };
+}
+
+function resetEventForm(
+  formId,
+  cancelId,
+  dateId,
+  messageId
+) {
+  const form = $(formId);
+
+  form.reset();
+  form.elements.id.value = "";
+  $(dateId).value = localDate();
+  $(cancelId).classList.add("hidden");
+
+  showMessage(messageId, "");
+}
+
+function populateEventForm(
+  formId,
+  record,
+  cancelId,
+  messageId
+) {
+  const f = $(formId);
+
+  Object.entries(record).forEach(([k, v]) => {
+    if (f.elements[k]) {
+      f.elements[k].value = v ?? "";
+    }
+  });
+
+  f.elements.id.value = record.id;
+  $(cancelId).classList.remove("hidden");
+
+  showMessage(messageId, "수정 중인 기록입니다.");
+
+  f.scrollIntoView({
+    behavior: "smooth",
+    block: "center"
+  });
+}
+
+function bindEventForm(
+  formId,
+  type,
+  collectionName,
+  cancelId,
+  dateId,
+  messageId
+) {
+  $(formId).addEventListener("submit", async e => {
+    e.preventDefault();
+
+    const f = e.currentTarget;
+    const btn = f.querySelector('[type="submit"]');
+
+    btn.disabled = true;
+
+    try {
+      const data = eventFormData(f, type);
+
+      if (
+        !data.date ||
+        !data.time ||
+        !data.type ||
+        data.intensity < 1 ||
+        data.intensity > 5 ||
+        data.duration < 0
+      ) {
+        throw new Error(
+          "날짜, 시간, 유형, 강도, 지속 시간을 확인해 주세요."
+        );
+      }
+
+      await saveDoc(
+        collectionName,
+        f.elements.id.value,
+        data
+      );
+
+      await refreshData();
+
+      resetEventForm(
+        formId,
+        cancelId,
+        dateId,
+        messageId
+      );
+
+      showMessage(messageId, "기록을 저장했어요.");
+
+      await renderCurrent();
+    } catch (err) {
+      console.error(err);
+
+      showMessage(
+        messageId,
+        err.message ||
+          "저장하지 못했어요. Firebase 설정을 확인해 주세요.",
+        true
+      );
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $(cancelId).addEventListener("click", () => {
+    resetEventForm(
+      formId,
+      cancelId,
+      dateId,
+      messageId
+    );
+  });
+}
+
+bindEventForm(
+  "behaviorForm",
+  "behavior",
+  C.behavior,
+  "cancelBehaviorEdit",
+  "behaviorDate",
+  "behaviorMessage"
+);
+
+bindEventForm(
+  "cryingForm",
+  "crying",
+  C.crying,
+  "cancelCryingEdit",
+  "cryDate",
+  "cryingMessage"
+);
+
+function renderEventList(
+  containerId,
+  records,
+  type
+) {
+  const container = $(containerId);
+  container.innerHTML = "";
+
+  if (!records.length) {
+    showEmpty(
+      containerId,
+      "선택한 달에 기록이 없어요."
+    );
     return;
   }
 
+  records.forEach(r => {
+    container.append(
+      itemCard({
+        title: `${formatDate(r.date)} ${r.time || ""} · ${r.type}`,
+        meta: `강도 ${r.intensity}/5 · 지속 ${r.duration}분`,
+        context: r.context,
+        actions: [
+          {
+            label: "수정",
+            onClick: () =>
+              populateEventForm(
+                type === "behavior"
+                  ? "behaviorForm"
+                  : "cryingForm",
+                r,
+                type === "behavior"
+                  ? "cancelBehaviorEdit"
+                  : "cancelCryingEdit",
+                type === "behavior"
+                  ? "behaviorMessage"
+                  : "cryingMessage"
+              )
+          },
+          {
+            label: "삭제",
+            danger: true,
+            onClick: () =>
+              deleteAndRefresh(C[type], r.id)
+          }
+        ]
+      })
+    );
+  });
+}
+
+async function deleteAndRefresh(
+  collectionName,
+  id
+) {
+  if (!confirm("이 기록을 삭제할까요?")) return;
+
   try {
-    const record = collectRecord();
+    await removeDoc(collectionName, id);
+    await refreshData();
+    await renderCurrent();
+  } catch (e) {
+    console.error(e);
+    alert("삭제하지 못했어요. 다시 확인해 주세요.");
+  }
+}
 
-    if (!record.mood) {
-      setMessage("오늘의 우울감 강도를 선택해 주세요.", true);
-      return;
+function renderEventStats(type, prefix) {
+  const rs = monthRecords(type);
+
+  const intensities = rs
+    .map(r => num(r.intensity))
+    .filter(n => n >= 1 && n <= 5);
+
+  const durations = rs.map(r => num(r.duration));
+
+  $(`${prefix}StatCount`).textContent = rs.length;
+
+  $(`${prefix}StatDays`).textContent =
+    new Set(rs.map(r => r.date)).size;
+
+  $(`${prefix}StatIntensity`).textContent =
+    displayNum(avg(intensities));
+
+  $(`${prefix}StatDuration`).textContent =
+    avg(durations) == null
+      ? "-"
+      : `${displayNum(avg(durations))}분`;
+}
+
+async function renderBehavior() {
+  $("behaviorMonth").textContent =
+    monthLabel(months.behavior);
+
+  renderEventStats("behavior", "behavior");
+
+  renderEventList(
+    "behaviorList",
+    monthRecords("behavior"),
+    "behavior"
+  );
+
+  const counts = new Map(
+    ["타해", "자해", "물건 던지기", "그외"].map(x => [x, 0])
+  );
+
+  monthRecords("behavior").forEach(r => {
+    counts.set(
+      r.type,
+      (counts.get(r.type) || 0) + 1
+    );
+  });
+
+  const box = $("behaviorTypeStats");
+  box.innerHTML = "";
+
+  counts.forEach((v, k) => {
+    const d = document.createElement("div");
+    d.className = "type-stat";
+
+    const a = document.createElement("span");
+    a.textContent = k;
+
+    const b = document.createElement("strong");
+    b.textContent = `${v}회`;
+
+    d.append(a, b);
+    box.append(d);
+  });
+}
+
+async function renderCrying() {
+  $("cryingMonth").textContent =
+    monthLabel(months.crying);
+
+  renderEventStats("crying", "cry");
+
+  renderEventList(
+    "cryingList",
+    monthRecords("crying"),
+    "crying"
+  );
+}
+
+// 체중 기록
+
+$("weightForm").addEventListener("submit", async e => {
+  e.preventDefault();
+
+  const f = e.currentTarget;
+  const btn = f.querySelector('[type="submit"]');
+
+  btn.disabled = true;
+
+  try {
+    const data = {
+      date: f.elements.date.value,
+      weight: num(f.elements.weight.value)
+    };
+
+    if (!data.date || data.weight <= 0) {
+      throw new Error(
+        "측정 날짜와 체중을 확인해 주세요."
+      );
     }
 
-    const previousDate = editingDate;
+    await saveDoc(
+      C.weight,
+      f.elements.id.value,
+      data
+    );
 
-    saveButton.disabled = true;
-    saveButton.textContent = "저장 중...";
+    await refreshData();
 
-    await setDoc(doc(db, COLLECTION_NAME, record.date), record);
+    f.reset();
+    f.elements.id.value = "";
+    $("weightDate").value = localDate();
+    $("cancelWeightEdit").classList.add("hidden");
 
-    if (previousDate && previousDate !== record.date) {
-      await deleteDoc(doc(db, COLLECTION_NAME, previousDate));
-    }
+    showMessage("weightMessage", "체중을 저장했어요.");
 
-    editingDate = record.date;
+    await renderWeight();
+  } catch (err) {
+    console.error(err);
 
-    // 저장한 기록이 포함된 달을 지난 기록에서 표시
-    historyMonth = record.date.slice(0, 7);
-
-    setMessage("기록을 저장했어요.");
-
-    // 저장 후 지난 기록 탭으로 이동
-    setView("history");
-  } catch (error) {
-    console.error("기록 저장 오류:", error);
-
-    setMessage(
-      error.message?.startsWith("각 울음 기록")
-        ? error.message
-        : "기록을 저장하지 못했어요. Firebase 설정과 보안 규칙을 확인해 주세요.",
+    showMessage(
+      "weightMessage",
+      err.message || "저장하지 못했어요.",
       true
     );
   } finally {
-    saveButton.disabled = false;
-    saveButton.textContent = editingDate ? "수정 내용 저장" : "기록 저장";
+    btn.disabled = false;
   }
 });
 
-document.getElementById("addCry").addEventListener("click", () => addCry());
+$("cancelWeightEdit").addEventListener("click", () => {
+  const f = $("weightForm");
 
-// 날짜 표시
+  f.reset();
+  f.elements.id.value = "";
+  $("weightDate").value = localDate();
+  $("cancelWeightEdit").classList.add("hidden");
 
-function formatDate(date) {
-  const [year, month, day] = date.split("-");
-  return `${year}.${month}.${day}`;
-}
-
-// 지난 기록: 월 선택 UI 생성
-
-const historyHeading = historyView.querySelector(".section-heading");
-const historyMonthControl = document.createElement("div");
-
-historyMonthControl.className = "history-month-control";
-historyMonthControl.innerHTML = `
-  <button type="button" id="historyPrevMonth" aria-label="이전 달">‹</button>
-  <h3 id="historyMonth"></h3>
-  <button type="button" id="historyNextMonth" aria-label="다음 달">›</button>
-`;
-
-historyHeading.after(historyMonthControl);
-
-function changeHistoryMonth(amount) {
-  const [year, month] = historyMonth.split("-").map(Number);
-  const date = new Date(year, month - 1 + amount, 1);
-
-  historyMonth =
-    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-
-  renderHistory();
-}
-
-document.getElementById("historyPrevMonth").addEventListener("click", () => {
-  changeHistoryMonth(-1);
+  showMessage("weightMessage", "");
 });
 
-document.getElementById("historyNextMonth").addEventListener("click", () => {
-  changeHistoryMonth(1);
-});
-
-// 지난 기록 목록
-
-async function renderHistory() {
-  const requestId = ++historyRequestId;
-
-  document.getElementById("historyMonth").textContent =
-    `${Number(historyMonth.slice(0, 4))}년 ${Number(historyMonth.slice(5, 7))}월`;
-
-  historyList.innerHTML =
-    '<div class="empty-state">기록을 불러오는 중...</div>';
-
-  try {
-    const allRecords = await readRecords();
-
-    // 월을 빠르게 이동했을 때 이전 요청 결과가 덮어쓰지 않도록 처리
-    if (requestId !== historyRequestId) return;
-
-    const records = allRecords.filter(record =>
-      typeof record.date === "string" &&
-      record.date.startsWith(`${historyMonth}-`)
-    );
-
-    historyList.innerHTML = "";
-
-    if (!records.length) {
-      historyList.innerHTML =
-        '<div class="empty-state">이 달에는 저장된 기록이 없어요.</div>';
-      return;
-    }
-
-    records.forEach(record => {
-      const item = document.createElement("article");
-      item.className = "history-item";
-
-      const main = document.createElement("div");
-      main.className = "history-main";
-
-      const date = document.createElement("div");
-      date.className = "history-date";
-      date.textContent = formatDate(record.date);
-
-      const badges = document.createElement("div");
-      badges.className = "history-badges";
-
-      const moodBadge = document.createElement("span");
-      moodBadge.className = "small-badge";
-      moodBadge.textContent = `우울감 ${record.mood}/5`;
-
-      const cryBadge = document.createElement("span");
-      cryBadge.className = "small-badge";
-      cryBadge.textContent = `울음 ${(record.cries || []).length}회`;
-
-      badges.append(moodBadge, cryBadge);
-      main.append(date, badges);
-      item.append(main);
-
-      if (record.cries?.length) {
-        const cryDetails = document.createElement("div");
-        cryDetails.className = "history-cry";
-
-        cryDetails.textContent = record.cries
-          .map((cry, index) =>
-            `${index + 1}회차 ${cry.time} · ${cry.duration} · 강도 ${cry.intensity}/5`
-          )
-          .join("  /  ");
-
-        item.append(cryDetails);
-      }
-
-      if (record.note) {
-        const note = document.createElement("p");
-        note.className = "history-note";
-        note.textContent = record.note;
-        item.append(note);
-      }
-
-      const actions = document.createElement("div");
-      actions.className = "history-actions";
-
-      const edit = document.createElement("button");
-      edit.type = "button";
-      edit.textContent = "수정";
-      edit.addEventListener("click", () => loadRecord(record));
-
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.textContent = "삭제";
-
-      remove.addEventListener("click", async () => {
-        if (!window.confirm(`${formatDate(record.date)} 기록을 삭제할까요?`)) {
-          return;
-        }
-
-        remove.disabled = true;
-
-        try {
-          await deleteDoc(doc(db, COLLECTION_NAME, record.date));
-          await renderHistory();
-        } catch (error) {
-          console.error("기록 삭제 오류:", error);
-          setMessage("기록을 삭제하지 못했어요. 다시 확인해 주세요.", true);
-          remove.disabled = false;
-        }
-      });
-
-      actions.append(edit, remove);
-      item.append(actions);
-      historyList.append(item);
-    });
-  } catch (error) {
-    console.error("기록 불러오기 오류:", error);
-
-    if (requestId !== historyRequestId) return;
-
-    historyList.innerHTML =
-      '<div class="empty-state">기록을 불러오지 못했어요. Firebase 설정과 보안 규칙을 확인해 주세요.</div>';
-  }
-}
-
-// 월간 리포트
-
-function changeMonth(amount) {
-  const [year, month] = reportMonth.split("-").map(Number);
-  const date = new Date(year, month - 1 + amount, 1);
-
-  reportMonth =
-    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-
-  renderReport();
-}
-
-document.getElementById("prevMonth").addEventListener("click", () => {
-  changeMonth(-1);
-});
-
-document.getElementById("nextMonth").addEventListener("click", () => {
-  changeMonth(1);
-});
-
-function countMostCommon(values) {
-  if (!values.length) return "-";
-
-  const counts = new Map();
-
-  values.forEach(value => {
-    counts.set(value, (counts.get(value) || 0) + 1);
-  });
-
-  return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])[0][0];
-}
-
-
-function showNumber(value) {
-  return Number.isInteger(value) ? String(value) : value.toFixed(1);
-}
-
-function renderMoodChart(records, daysInMonth) {
-  const container = document.getElementById("moodChart");
-
-  const points = records
-    .filter(record => Number(record.mood) >= 1 && Number(record.mood) <= 5)
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  if (!points.length) {
-    container.innerHTML =
-      '<p class="empty-state">이 달에는 우울감 기록이 없어요.</p>';
-    return;
-  }
-
-  const width = 340;
-  const height = 190;
-  const left = 30;
-  const right = 12;
-  const top = 18;
-  const bottom = 30;
-  const plotWidth = width - left - right;
-  const plotHeight = height - top - bottom;
-
-  const x = day =>
-    left + ((day - 1) / Math.max(daysInMonth - 1, 1)) * plotWidth;
-
-  const y = score =>
-    top + ((5 - score) / 4) * plotHeight;
-
-  const grid = [1, 2, 3, 4, 5].map(score => `
-    <line x1="${left}" y1="${y(score)}" x2="${width - right}" y2="${y(score)}"
-      stroke="currentColor" stroke-opacity=".13"/>
-    <text x="${left - 10}" y="${y(score) + 4}" text-anchor="middle"
-      font-size="10" fill="currentColor">${score}</text>
-  `).join("");
-
-  const labels = [1, Math.ceil(daysInMonth / 2), daysInMonth]
-    .filter((day, index, array) => array.indexOf(day) === index)
-    .map(day => `
-      <text x="${x(day)}" y="${height - 8}" text-anchor="middle"
-        font-size="10" fill="currentColor">${day}일</text>
-    `).join("");
-
-  const line = points.map((record, index) => {
-    const day = Number(record.date.slice(8, 10));
-    return `${index ? "L" : "M"} ${x(day)} ${y(Number(record.mood))}`;
-  }).join(" ");
-
-  const circles = points.map(record => {
-    const day = Number(record.date.slice(8, 10));
-    const score = Number(record.mood);
-
-    return `<circle cx="${x(day)}" cy="${y(score)}" r="3.5"
-      fill="#c66c94">
-      <title>${day}일 · 우울감 ${score}/5</title>
-    </circle>`;
-  }).join("");
-
-  container.innerHTML = `
-    <svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img"
-      aria-label="날짜별 우울감 점수 그래프">
-      ${grid}
-      <path d="${line}" fill="none" stroke="#c66c94" stroke-width="2.5"
-        stroke-linecap="round" stroke-linejoin="round"/>
-      ${circles}
-      ${labels}
-    </svg>
-  `;
-}
-
-function renderCryChart(records, daysInMonth) {
-  const container = document.getElementById("cryChart");
-  const recordMap = new Map(records.map(record => [record.date, record]));
-
-  const values = Array.from({ length: daysInMonth }, (_, index) => {
-    const day = index + 1;
-    const date = `${reportMonth}-${String(day).padStart(2, "0")}`;
-
-    if (!recordMap.has(date)) {
-      return { day, count: null };
-    }
-
-    return {
-      day,
-      count: (recordMap.get(date).cries || []).length
-    };
-  });
+function renderWeightChart(records) {
+  const el = $("weightChart");
+  el.innerHTML = "";
 
   if (!records.length) {
-    container.innerHTML =
-      '<p class="empty-state">이 달에는 저장된 기록이 없어요.</p>';
+    showEmpty(
+      "weightChart",
+      "선택한 달의 체중 기록이 없어요."
+    );
     return;
   }
 
-  const width = 340;
-  const height = 190;
-  const left = 28;
-  const right = 10;
-  const top = 15;
-  const bottom = 30;
-  const plotWidth = width - left - right;
-  const plotHeight = height - top - bottom;
-  const maxCount = Math.max(1, ...values.map(item => item.count ?? 0));
-  const slot = plotWidth / daysInMonth;
-  const barWidth = Math.max(2, Math.min(10, slot * 0.65));
+  const sorted = [...records].sort(
+    (a, b) => a.date.localeCompare(b.date)
+  );
 
-  const grid = Array.from({ length: 4 }, (_, index) => {
-    const value = Math.ceil(maxCount * index / 3);
-    const y = top + plotHeight - (value / maxCount) * plotHeight;
+  const w = 600;
+  const h = 235;
+  const l = 48;
+  const r = 18;
+  const t = 20;
+  const b = 35;
+  const pw = w - l - r;
+  const ph = h - t - b;
 
-    return `
-      <line x1="${left}" y1="${y}" x2="${width - right}" y2="${y}"
-        stroke="currentColor" stroke-opacity=".12"/>
-      <text x="${left - 7}" y="${y + 4}" text-anchor="middle"
-        font-size="9" fill="currentColor">${value}</text>
+  const vals = sorted.map(x => num(x.weight));
+
+  let min = Math.min(...vals);
+  let max = Math.max(...vals);
+
+  if (min === max) {
+    min -= 1;
+    max += 1;
+  }
+
+  const pad = (max - min) * 0.15;
+
+  min -= pad;
+  max += pad;
+
+  const x = i =>
+    l +
+    (sorted.length === 1
+      ? pw / 2
+      : (i / (sorted.length - 1)) * pw);
+
+  const y = v =>
+    t + ((max - v) / (max - min)) * ph;
+
+  let svg =
+    `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="월별 체중 변화 그래프">`;
+
+  for (let i = 0; i < 5; i++) {
+    const val = min + ((max - min) * i) / 4;
+    const yy = y(val);
+
+    svg += `
+      <line
+        x1="${l}"
+        y1="${yy}"
+        x2="${w - r}"
+        y2="${yy}"
+        stroke="currentColor"
+        stroke-opacity=".13"
+      />
+      <text
+        x="${l - 8}"
+        y="${yy + 4}"
+        text-anchor="end"
+        font-size="11"
+        fill="currentColor"
+      >${val.toFixed(1)}</text>
     `;
-  }).join("");
+  }
 
-  const bars = values.map(item => {
-    const x = left + (item.day - 0.5) * slot - barWidth / 2;
+  const points = sorted
+    .map((v, i) =>
+      `${i ? "L" : "M"} ${x(i)} ${y(num(v.weight))}`
+    )
+    .join(" ");
 
-    if (item.count === null) {
-      return `<line x1="${x + barWidth / 2}" y1="${top + plotHeight - 3}"
-        x2="${x + barWidth / 2}" y2="${top + plotHeight}"
-        stroke="currentColor" stroke-opacity=".2">
-        <title>${item.day}일 · 기록 없음</title>
-      </line>`;
-    }
-
-    const barHeight = item.count === 0
-      ? 0
-      : (item.count / maxCount) * plotHeight;
-
-    const y = top + plotHeight - barHeight;
-
-    return `<rect x="${x}" y="${y}" width="${barWidth}"
-      height="${Math.max(item.count === 0 ? 0 : 2, barHeight)}"
-      rx="2" fill="#c66c94" fill-opacity="${item.count === 0 ? 0.18 : 0.85}">
-      <title>${item.day}일 · 울음 ${item.count}회</title>
-    </rect>`;
-  }).join("");
-
-  const labels = [1, Math.ceil(daysInMonth / 2), daysInMonth]
-    .filter((day, index, array) => array.indexOf(day) === index)
-    .map(day => `
-      <text x="${left + (day - 0.5) * slot}" y="${height - 8}"
-        text-anchor="middle" font-size="10" fill="currentColor">${day}일</text>
-    `).join("");
-
-  container.innerHTML = `
-    <svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img"
-      aria-label="날짜별 울음 횟수 그래프">
-      ${grid}
-      ${bars}
-      ${labels}
-    </svg>
-    <p class="chart-legend">
-      <span class="legend-dot"></span> 기록한 날
-      <span class="legend-dash"></span> 기록 없는 날
-    </p>
+  svg += `
+    <path
+      d="${points}"
+      fill="none"
+      stroke="#c66c94"
+      stroke-width="3"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
   `;
-}
 
-async function renderReport() {
-  const requestId = ++reportRequestId;
-  const [year, month] = reportMonth.split("-").map(Number);
-  const daysInMonth = new Date(year, month, 0).getDate();
+  sorted.forEach((v, i) => {
+    const day = Number(v.date.slice(-2));
 
-  document.getElementById("reportMonth").textContent =
-    `${year}년 ${month}월`;
+    svg += `
+      <circle
+        cx="${x(i)}"
+        cy="${y(num(v.weight))}"
+        r="4"
+        fill="#c66c94"
+      >
+        <title>${day}일 · ${num(v.weight).toFixed(1)}kg</title>
+      </circle>
+    `;
+  });
 
-  document.getElementById("reportStatus").textContent =
-    "기록을 분석하고 있어요.";
-
-  try {
-    const allRecords = await readRecords();
-
-    // 월이 빠르게 바뀌면 가장 최근 요청 결과만 표시
-    if (requestId !== reportRequestId) return;
-
-    const records = allRecords
-      .filter(record =>
-        typeof record.date === "string" &&
-        record.date.startsWith(`${reportMonth}-`)
-      )
-      .sort((a, b) => a.date.localeCompare(b.date));
-
-    const totalCries = records.reduce(
-      (sum, record) => sum + (record.cries || []).length,
-      0
-    );
-
-    const moodValues = records
-      .map(record => Number(record.mood))
-      .filter(mood => mood >= 1 && mood <= 5);
-
-    const averageMood = moodValues.length
-      ? moodValues.reduce((sum, mood) => sum + mood, 0) / moodValues.length
-      : null;
-
-    const cryDays = records.filter(
-      record => (record.cries || []).length > 0
-    ).length;
-
-    const allCries = records.flatMap(record => record.cries || []);
-
-    const validIntensities = allCries
-      .map(cry => Number(cry.intensity))
-      .filter(value => value >= 1 && value <= 5);
-
-    const avgIntensity = validIntensities.length
-      ? validIntensities.reduce((sum, value) => sum + value, 0) /
-        validIntensities.length
-      : null;
-
-    document.getElementById("statDays").textContent = records.length;
-    document.getElementById("statCries").textContent = totalCries;
-
-    document.getElementById("statMood").textContent =
-      averageMood === null ? "-" : showNumber(averageMood);
-
-    document.getElementById("statCryDays").textContent = cryDays;
-
-    document.getElementById("avgIntensity").textContent =
-      avgIntensity === null ? "-" : `${showNumber(avgIntensity)} / 5`;
-
-    document.getElementById("commonDuration").textContent =
-      countMostCommon(
-        allCries.map(cry => cry.duration).filter(Boolean)
-      );
-
-
-    renderMoodChart(records, daysInMonth);
-    renderCryChart(records, daysInMonth);
-
-    const notesContainer = document.getElementById("monthlyNotes");
-    notesContainer.innerHTML = "";
-
-    const notes = records.filter(record => record.note?.trim());
-
-    if (!notes.length) {
-      notesContainer.innerHTML =
-        '<p class="empty-state">이 달에 작성한 메모가 없어요.</p>';
-    } else {
-      notes.forEach(record => {
-        const entry = document.createElement("article");
-        entry.className = "monthly-note";
-
-        const date = document.createElement("strong");
-        date.textContent = formatDate(record.date);
-
-        const text = document.createElement("p");
-        text.textContent = record.note;
-
-        entry.append(date, text);
-        notesContainer.append(entry);
-      });
-    }
-
-    document.getElementById("reportStatus").textContent =
-      records.length
-        ? `${records.length}일의 기록을 분석했어요. 기록이 없는 날은 우울감 평균에서 제외했어요.`
-        : "선택한 달에는 저장된 기록이 없어요.";
-  } catch (error) {
-    console.error("월간 리포트 오류:", error);
-
-    if (requestId !== reportRequestId) return;
-
-    document.getElementById("reportStatus").textContent =
-      "리포트를 불러오지 못했어요. Firebase 설정과 보안 규칙을 확인해 주세요.";
-
-    ["statDays", "statCries", "statMood", "statCryDays"].forEach(id => {
-      document.getElementById(id).textContent = "-";
+  [
+    0,
+    Math.floor((sorted.length - 1) / 2),
+    sorted.length - 1
+  ]
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .forEach(i => {
+      svg += `
+        <text
+          x="${x(i)}"
+          y="${h - 10}"
+          text-anchor="middle"
+          font-size="11"
+          fill="currentColor"
+        >${Number(sorted[i].date.slice(-2))}일</text>
+      `;
     });
 
-    document.getElementById("avgIntensity").textContent = "-";
-    document.getElementById("commonDuration").textContent = "-";
-    document.getElementById("monthlyNotes").innerHTML = "";
-    document.getElementById("moodChart").innerHTML = "";
-    document.getElementById("cryChart").innerHTML = "";
+  svg += "</svg>";
+  el.innerHTML = svg;
+}
+
+async function renderWeight() {
+  $("weightMonth").textContent =
+    monthLabel(months.weight);
+
+  const rs = monthRecords("weight").sort(
+    (a, b) => a.date.localeCompare(b.date)
+  );
+
+  $("weightFirst").textContent = rs.length
+    ? `${num(rs[0].weight).toFixed(1)}kg`
+    : "-";
+
+  $("weightLast").textContent = rs.length
+    ? `${num(rs[rs.length - 1].weight).toFixed(1)}kg`
+    : "-";
+
+  const change =
+    rs.length > 1
+      ? num(rs[rs.length - 1].weight) -
+        num(rs[0].weight)
+      : null;
+
+  $("weightChange").textContent =
+    change == null
+      ? "-"
+      : `${change > 0 ? "+" : ""}${change.toFixed(1)}kg`;
+
+  renderWeightChart(rs);
+
+  const list = $("weightList");
+  list.innerHTML = "";
+
+  const all = sortNewest(cache.weight);
+
+  if (!all.length) {
+    showEmpty("weightList");
+    return;
+  }
+
+  all.forEach(r => {
+    list.append(
+      itemCard({
+        title: `${formatDate(r.date)} · ${num(r.weight).toFixed(1)}kg`,
+        meta: "체중 측정",
+        actions: [
+          {
+            label: "수정",
+            onClick: () => {
+              const f = $("weightForm");
+
+              f.elements.id.value = r.id;
+              f.elements.date.value = r.date;
+              f.elements.weight.value = r.weight;
+
+              $("cancelWeightEdit").classList.remove("hidden");
+
+              f.scrollIntoView({
+                behavior: "smooth",
+                block: "center"
+              });
+            }
+          },
+          {
+            label: "삭제",
+            danger: true,
+            onClick: () =>
+              deleteAndRefresh(C.weight, r.id)
+          }
+        ]
+      })
+    );
+  });
+}
+
+// 약물 관리
+
+function activeMeds() {
+  return cache.meds
+    .filter(m => m.active !== false)
+    .sort((a, b) =>
+      (a.name || "").localeCompare(b.name || "", "ko")
+    );
+}
+
+function renderMedOptions() {
+  const select = $("changeMedication");
+  const current = select.value;
+
+  select.innerHTML =
+    '<option value="">약물을 선택해 주세요</option>';
+
+  cache.meds.forEach(m => {
+    const o = document.createElement("option");
+
+    o.value = m.id;
+    o.textContent =
+      `${m.name}${m.active === false ? " (중단됨)" : ""}`;
+
+    select.append(o);
+  });
+
+  if ([...select.options].some(o => o.value === current)) {
+    select.value = current;
   }
 }
 
-dateInput.addEventListener("change", async () => {
-  const selectedDate = dateInput.value;
+function renderMedicationChecks() {
+  const box = $("medicationChecks");
+  box.innerHTML = "";
 
-  if (!selectedDate) return;
+  const meds = activeMeds();
+
+  if (!meds.length) {
+    showEmpty(
+      "medicationChecks",
+      "먼저 복용 중인 약물을 등록해 주세요."
+    );
+    return;
+  }
+
+  const date = $("medLogDate").value || localDate();
+  const logs = cache.logs.filter(l => l.date === date);
+
+  meds.forEach(m => {
+    const log = logs.find(l => l.medicationId === m.id);
+
+    const row = document.createElement("div");
+    row.className = "med-check";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.id = `medcheck-${m.id}`;
+    cb.dataset.medId = m.id;
+    cb.checked = Boolean(log?.taken);
+
+    const label = document.createElement("label");
+    label.htmlFor = cb.id;
+    label.textContent = m.name;
+
+    const dose = document.createElement("span");
+    dose.className = "dose";
+    dose.textContent = m.dose || "용량 미입력";
+
+    label.append(document.createElement("br"), dose);
+    row.append(cb, label);
+    box.append(row);
+  });
+}
+
+$("medicationForm").addEventListener("submit", async e => {
+  e.preventDefault();
+
+  const f = e.currentTarget;
 
   try {
-    const snapshot = await getDoc(
-      doc(db, COLLECTION_NAME, selectedDate)
-    );
+    const id = f.elements.id.value || newId();
 
-    if (snapshot.exists()) {
-      fillForm(snapshot.data());
-    } else {
-      clearForm(selectedDate);
+    const data = {
+      name: f.elements.name.value.trim(),
+      dose: f.elements.dose.value.trim(),
+      startDate: f.elements.startDate.value,
+      active: true
+    };
+
+    if (!data.name || !data.startDate) {
+      throw new Error(
+        "약물명과 시작 날짜를 입력해 주세요."
+      );
     }
-  } catch (error) {
-    console.error("날짜별 기록 불러오기 오류:", error);
-    setMessage("해당 날짜의 기록을 불러오지 못했어요.", true);
+
+    await saveDoc(C.meds, id, data);
+    await refreshData();
+
+    f.reset();
+    f.elements.id.value = "";
+    $("medStartDate").value = localDate();
+    $("cancelMedicationEdit").classList.add("hidden");
+
+    showMessage("medicationMessage", "약물을 저장했어요.");
+
+    await renderMedication();
+  } catch (err) {
+    console.error(err);
+
+    showMessage(
+      "medicationMessage",
+      err.message || "약물을 저장하지 못했어요.",
+      true
+    );
   }
 });
 
-// 최초 실행
-loadTodayRecord();
+$("cancelMedicationEdit").addEventListener("click", () => {
+  const f = $("medicationForm");
+
+  f.reset();
+  f.elements.id.value = "";
+  $("medStartDate").value = localDate();
+  $("cancelMedicationEdit").classList.add("hidden");
+
+  showMessage("medicationMessage", "");
+});
+
+$("medLogDate").addEventListener(
+  "change",
+  renderMedicationChecks
+);
+
+$("medicationLogForm").addEventListener("submit", async e => {
+  e.preventDefault();
+
+  try {
+    const date = $("medLogDate").value;
+
+    if (!date) {
+      throw new Error("복용 기록 날짜를 선택해 주세요.");
+    }
+
+    const checks = [
+      ...$("medicationChecks").querySelectorAll(
+        'input[type="checkbox"]'
+      )
+    ];
+
+    if (!checks.length) {
+      throw new Error("먼저 약물을 등록해 주세요.");
+    }
+
+    for (const cb of checks) {
+      const med = cache.meds.find(
+        m => m.id === cb.dataset.medId
+      );
+
+      const id = `${date}_${cb.dataset.medId}`;
+
+      await saveDoc(C.logs, id, {
+        date,
+        medicationId: cb.dataset.medId,
+        medicationName: med?.name || "삭제된 약물",
+        dose: med?.dose || "",
+        taken: cb.checked,
+        note: $("medLogNote").value.trim()
+      });
+    }
+
+    await refreshData();
+
+    showMessage(
+      "medicationLogMessage",
+      "복용 여부를 저장했어요."
+    );
+
+    await renderMedication();
+  } catch (err) {
+    console.error(err);
+
+    showMessage(
+      "medicationLogMessage",
+      err.message || "복용 기록을 저장하지 못했어요.",
+      true
+    );
+  }
+});
+
+$("medChangeForm").addEventListener("submit", async e => {
+  e.preventDefault();
+
+  const f = e.currentTarget;
+
+  try {
+    const data = {
+      date: f.elements.date.value,
+      medicationId: f.elements.medicationId.value,
+      action: f.elements.action.value,
+      dose: f.elements.dose.value.trim(),
+      note: f.elements.note.value.trim()
+    };
+
+    if (!data.date || !data.medicationId || !data.action) {
+      throw new Error(
+        "변경 날짜, 약물, 변경 유형을 입력해 주세요."
+      );
+    }
+
+    const med = cache.meds.find(
+      m => m.id === data.medicationId
+    );
+
+    if (!med) {
+      throw new Error("선택한 약물을 찾을 수 없어요.");
+    }
+
+    await saveDoc(C.changes, f.elements.id.value, data);
+
+    if (data.action === "중단") {
+      await setDoc(doc(db, C.meds, med.id), {
+        ...med,
+        active: false,
+        updatedAt: new Date().toISOString()
+      });
+    } else if (data.action === "추가") {
+      await setDoc(doc(db, C.meds, med.id), {
+        ...med,
+        active: true,
+        ...(data.dose ? { dose: data.dose } : {}),
+        updatedAt: new Date().toISOString()
+      });
+    } else if (data.action === "용량 변경" && data.dose) {
+      await setDoc(doc(db, C.meds, med.id), {
+        ...med,
+        dose: data.dose,
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    await refreshData();
+
+    f.reset();
+    f.elements.id.value = "";
+    $("changeDate").value = localDate();
+    $("cancelChangeEdit").classList.add("hidden");
+
+    showMessage(
+      "medChangeMessage",
+      "약물 변경 이력을 저장했어요."
+    );
+
+    await renderMedication();
+  } catch (err) {
+    console.error(err);
+
+    showMessage(
+      "medChangeMessage",
+      err.message || "변경 이력을 저장하지 못했어요.",
+      true
+    );
+  }
+});
+
+$("cancelChangeEdit").addEventListener("click", () => {
+  const f = $("medChangeForm");
+
+  f.reset();
+  f.elements.id.value = "";
+  $("changeDate").value = localDate();
+  $("cancelChangeEdit").classList.add("hidden");
+
+  showMessage("medChangeMessage", "");
+});
+
+async function renderMedication() {
+  renderMedOptions();
+  renderMedicationChecks();
+
+  const medsBox = $("medicationList");
+  medsBox.innerHTML = "";
+
+  if (!cache.meds.length) {
+    showEmpty("medicationList", "등록된 약물이 없어요.");
+  } else {
+    cache.meds
+      .sort((a, b) =>
+        (a.name || "").localeCompare(b.name || "", "ko")
+      )
+      .forEach(m => {
+        medsBox.append(
+          itemCard({
+            title: m.name,
+            meta:
+              `${m.active === false ? "복용 중단" : "복용 중"} · ` +
+              `${m.dose || "용량 미입력"} · 시작 ${formatDate(m.startDate)}`,
+            actions: [
+              {
+                label: "수정",
+                onClick: () => {
+                  const f = $("medicationForm");
+
+                  f.elements.id.value = m.id;
+                  f.elements.name.value = m.name;
+                  f.elements.dose.value = m.dose || "";
+                  f.elements.startDate.value =
+                    m.startDate || localDate();
+
+                  $("cancelMedicationEdit").classList.remove("hidden");
+
+                  f.scrollIntoView({
+                    behavior: "smooth",
+                    block: "center"
+                  });
+                }
+              },
+              {
+                label: m.active === false ? "복용 재개" : "복용 중단",
+                onClick: async () => {
+                  const next = m.active === false;
+
+                  try {
+                    await setDoc(doc(db, C.meds, m.id), {
+                      ...m,
+                      active: next,
+                      updatedAt: new Date().toISOString()
+                    });
+
+                    await saveDoc(C.changes, newId(), {
+                      date: localDate(),
+                      medicationId: m.id,
+                      action: next ? "추가" : "중단",
+                      dose: m.dose || "",
+                      note: "약물 목록에서 상태 변경"
+                    });
+
+                    await refreshData();
+                    await renderMedication();
+                  } catch (err) {
+                    console.error(err);
+                    alert("약물 상태를 변경하지 못했어요.");
+                  }
+                }
+              },
+              {
+                label: "삭제",
+                danger: true,
+                onClick: () => deleteAndRefresh(C.meds, m.id)
+              }
+            ]
+          })
+        );
+      });
+  }
+
+  const changesBox = $("medicationChanges");
+  changesBox.innerHTML = "";
+
+  const changes = sortNewest(cache.changes);
+
+  if (!changes.length) {
+    showEmpty(
+      "medicationChanges",
+      "약물 변경 이력이 없어요."
+    );
+  } else {
+    changes.forEach(r => {
+      const med = cache.meds.find(
+        m => m.id === r.medicationId
+      );
+
+      changesBox.append(
+        itemCard({
+          title:
+            `${formatDate(r.date)} · ` +
+            `${med?.name || r.medicationName || "약물"} · ${r.action}`,
+          meta: r.dose
+            ? `변경 후 용량·복용법: ${r.dose}`
+            : "변경 후 용량 미기록",
+          context: r.note,
+          actions: [
+            {
+              label: "수정",
+              onClick: () => {
+                const f = $("medChangeForm");
+
+                f.elements.id.value = r.id;
+                f.elements.date.value = r.date;
+                f.elements.medicationId.value = r.medicationId;
+                f.elements.action.value = r.action;
+                f.elements.dose.value = r.dose || "";
+                f.elements.note.value = r.note || "";
+
+                $("cancelChangeEdit").classList.remove("hidden");
+
+                f.scrollIntoView({
+                  behavior: "smooth",
+                  block: "center"
+                });
+              }
+            },
+            {
+              label: "삭제",
+              danger: true,
+              onClick: () => deleteAndRefresh(C.changes, r.id)
+            }
+          ]
+        })
+      );
+    });
+  }
+
+  const logBox = $("medicationLogHistory");
+  logBox.innerHTML = "";
+
+  const logs = sortNewest(cache.logs);
+
+  if (!logs.length) {
+    showEmpty("medicationLogHistory", "복용 기록이 없어요.");
+  } else {
+    logs.forEach(r => {
+      logBox.append(
+        itemCard({
+          title: `${formatDate(r.date)} · ${r.medicationName || "약물"}`,
+          meta: `${r.taken ? "복용" : "미복용"} · ${r.dose || "용량 미입력"}`,
+          context: r.note,
+          actions: [
+            {
+              label: "삭제",
+              danger: true,
+              onClick: () => deleteAndRefresh(C.logs, r.id)
+            }
+          ]
+        })
+      );
+    });
+  }
+}
+
+// 대시보드: 최근 기록만 표시하며 전체기록 화면은 없음
+
+async function renderDashboard() {
+  $("todayLabel").textContent = formatDate(today);
+
+  $("dashBehavior").textContent =
+    cache.behavior.filter(r => r.date === today).length;
+
+  $("dashCrying").textContent =
+    cache.crying.filter(r => r.date === today).length;
+
+  const latestWeight = sortNewest(cache.weight)[0];
+
+  $("dashWeight").textContent = latestWeight
+    ? num(latestWeight.weight).toFixed(1)
+    : "-";
+
+  const todaysLogs = cache.logs.filter(
+    r => r.date === today
+  );
+
+  $("dashMeds").textContent =
+    todaysLogs.filter(r => r.taken).length;
+
+  const items = [];
+
+  cache.behavior.forEach(r => {
+    items.push({
+      date: r.date,
+      time: r.time,
+      title: `도전적 행동 · ${r.type}`,
+      meta: `강도 ${r.intensity}/5 · ${r.duration}분`
+    });
+  });
+
+  cache.crying.forEach(r => {
+    items.push({
+      date: r.date,
+      time: r.time,
+      title: `울음 · ${r.type}`,
+      meta: `강도 ${r.intensity}/5 · ${r.duration}분`
+    });
+  });
+
+  cache.weight.forEach(r => {
+    items.push({
+      date: r.date,
+      time: "",
+      title: "체중 측정",
+      meta: `${num(r.weight).toFixed(1)}kg`
+    });
+  });
+
+  cache.changes.forEach(r => {
+    items.push({
+      date: r.date,
+      time: "",
+      title: `약물 변경 · ${r.action}`,
+      meta:
+        cache.meds.find(m => m.id === r.medicationId)?.name ||
+        "약물"
+    });
+  });
+
+  items.sort((a, b) =>
+    `${b.date} ${b.time}`.localeCompare(
+      `${a.date} ${a.time}`
+    )
+  );
+
+  const box = $("recentRecords");
+  box.innerHTML = "";
+
+  if (!items.length) {
+    showEmpty("recentRecords", "아직 기록이 없어요.");
+    return;
+  }
+
+  items.slice(0, 6).forEach(r => {
+    box.append(
+      itemCard({
+        title: r.title,
+        meta:
+          `${formatDate(r.date)}` +
+          `${r.time ? ` ${r.time}` : ""} · ${r.meta}`
+      })
+    );
+  });
+}
+
+// 날짜 기본값 및 첫 화면
+
+for (const id of [
+  "behaviorDate",
+  "cryDate",
+  "weightDate",
+  "medStartDate",
+  "changeDate",
+  "medLogDate"
+]) {
+  $(id).value = today;
+}
+
+try {
+  await refreshData();
+  await renderDashboard();
+} catch (error) {
+  console.error("초기 데이터 불러오기 오류:", error);
+  showEmpty("recentRecords", "Firebase 설정을 확인해 주세요.");
+}
