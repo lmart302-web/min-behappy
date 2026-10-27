@@ -1313,70 +1313,7 @@ async function renderDashboard() {
   $("dashMeds").textContent =
     todaysLogs.filter(r => r.taken).length;
 
-  const items = [];
-
-  cache.behavior.forEach(r => {
-    items.push({
-      date: r.date,
-      time: r.time,
-      title: `도전적 행동 · ${r.type}`,
-      meta: `강도 ${r.intensity}/5 · ${r.duration}분`
-    });
-  });
-
-  cache.crying.forEach(r => {
-    items.push({
-      date: r.date,
-      time: r.time,
-      title: `울음 · ${r.type}`,
-      meta: `강도 ${r.intensity}/5 · ${r.duration}분`
-    });
-  });
-
-  cache.weight.forEach(r => {
-    items.push({
-      date: r.date,
-      time: "",
-      title: "체중 측정",
-      meta: `${num(r.weight).toFixed(1)}kg`
-    });
-  });
-
-  cache.changes.forEach(r => {
-    items.push({
-      date: r.date,
-      time: "",
-      title: `약물 변경 · ${r.action}`,
-      meta:
-        cache.meds.find(m => m.id === r.medicationId)?.name ||
-        "약물"
-    });
-  });
-
-  items.sort((a, b) =>
-    `${b.date} ${b.time}`.localeCompare(
-      `${a.date} ${a.time}`
-    )
-  );
-
-  const box = $("recentRecords");
-  box.innerHTML = "";
-
-  if (!items.length) {
-    showEmpty("recentRecords", "아직 기록이 없어요.");
-    return;
-  }
-
-  items.slice(0, 6).forEach(r => {
-    box.append(
-      itemCard({
-        title: r.title,
-        meta:
-          `${formatDate(r.date)}` +
-          `${r.time ? ` ${r.time}` : ""} · ${r.meta}`
-      })
-    );
-  });
+  
 }
 
 // 날짜 기본값 및 첫 화면
