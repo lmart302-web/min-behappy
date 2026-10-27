@@ -1,3 +1,4 @@
+
 import { db } from "./firebase.js";
 
 import {
@@ -19,12 +20,18 @@ const C = {
 
 const $ = id => document.getElementById(id);
 
+function localDate(d = new Date()) {
+  const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return x.toISOString().slice(0, 10);
+}
+
 const today = localDate();
 
 const months = {
   behavior: today.slice(0, 7),
   crying: today.slice(0, 7),
-  weight: today.slice(0, 7)
+  weight: today.slice(0, 7),
+  medicationLogs: today.slice(0, 7)
 };
 
 let cache = {
@@ -37,13 +44,6 @@ let cache = {
 };
 
 let activeView = "dashboard";
-
-// 날짜 및 공통 함수
-
-function localDate(d = new Date()) {
-  const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-  return x.toISOString().slice(0, 10);
-}
 
 function newId() {
   return crypto.randomUUID
@@ -81,13 +81,8 @@ function displayNum(v, digits = 1) {
 function showMessage(id, text, error = false) {
   const el = $(id);
   if (!el) return;
-
   el.textContent = text;
   el.style.color = error ? "#b4234d" : "";
-}
-
-function safeText(v) {
-  return String(v ?? "");
 }
 
 function sortNewest(arr) {
@@ -120,14 +115,7 @@ async function refreshData() {
     Object.values(C).map(readCollection)
   );
 
-  cache = {
-    behavior,
-    crying,
-    weight,
-    meds,
-    changes,
-    logs
-  };
+  cache = { behavior, crying, weight, meds, changes, logs };
 }
 
 async function saveDoc(collectionName, id, data) {
@@ -161,10 +149,7 @@ function setView(view) {
 
   renderCurrent().catch(showLoadError);
 
-  window.scrollTo({
-    top: 0,
-    behavior: "smooth"
-  });
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 async function renderCurrent() {
@@ -177,9 +162,7 @@ async function renderCurrent() {
 
 function showLoadError(error) {
   console.error(error);
-  alert(
-    "데이터를 불러오지 못했어요. Firebase 설정과 Firestore 보안 규칙을 확인해 주세요."
-  );
+  alert("데이터를 불러오지 못했어요. Firebase 설정과 Firestore 보안 규칙을 확인해 주세요.");
 }
 
 document.querySelectorAll(".tab").forEach(b => {
@@ -191,12 +174,9 @@ document.querySelectorAll("[data-go]").forEach(b => {
 });
 
 document.querySelectorAll("[data-month-target]").forEach(b => {
-  b.addEventListener("click", () =>
-    changeMonth(
-      b.dataset.monthTarget,
-      Number(b.dataset.delta)
-    )
-  );
+  b.addEventListener("click", () => {
+    changeMonth(b.dataset.monthTarget, Number(b.dataset.delta));
+  });
 });
 
 function changeMonth(key, delta) {
@@ -211,12 +191,7 @@ function changeMonth(key, delta) {
 
 // 공통 기록 카드
 
-function itemCard({
-  title,
-  meta,
-  context,
-  actions = []
-}) {
+function itemCard({ title, meta, context, actions = [] }) {
   const article = document.createElement("article");
   article.className = "record-item";
 
@@ -240,6 +215,7 @@ function itemCard({
   if (context) {
     const c = document.createElement("p");
     c.className = "record-context";
+    c.style.whiteSpace = "pre-line";
     c.textContent = context;
     article.append(c);
   }
@@ -253,9 +229,7 @@ function itemCard({
       b.type = "button";
       b.textContent = a.label;
 
-      if (a.danger) {
-        b.className = "delete";
-      }
+      if (a.danger) b.className = "delete";
 
       b.addEventListener("click", a.onClick);
       row.append(b);
@@ -267,10 +241,7 @@ function itemCard({
   return article;
 }
 
-function showEmpty(
-  containerId,
-  message = "저장된 기록이 없어요."
-) {
+function showEmpty(containerId, message = "저장된 기록이 없어요.") {
   const container = $(containerId);
   if (!container) return;
 
@@ -279,15 +250,12 @@ function showEmpty(
   const p = document.createElement("div");
   p.className = "empty-state";
   p.textContent = message;
-
   container.append(p);
 }
 
 function monthRecords(type) {
   return sortNewest(
-    cache[type].filter(r =>
-      (r.date || "").startsWith(months[type])
-    )
+    cache[type].filter(r => (r.date || "").startsWith(months[type]))
   );
 }
 
@@ -307,61 +275,36 @@ function eventFormData(form, type) {
   };
 }
 
-function resetEventForm(
-  formId,
-  cancelId,
-  dateId,
-  messageId
-) {
+function resetEventForm(formId, cancelId, dateId, messageId) {
   const form = $(formId);
 
   form.reset();
   form.elements.id.value = "";
   $(dateId).value = localDate();
   $(cancelId).classList.add("hidden");
-
   showMessage(messageId, "");
 }
 
-function populateEventForm(
-  formId,
-  record,
-  cancelId,
-  messageId
-) {
+function populateEventForm(formId, record, cancelId, messageId) {
   const f = $(formId);
 
   Object.entries(record).forEach(([k, v]) => {
-    if (f.elements[k]) {
-      f.elements[k].value = v ?? "";
-    }
+    if (f.elements[k]) f.elements[k].value = v ?? "";
   });
 
   f.elements.id.value = record.id;
   $(cancelId).classList.remove("hidden");
-
   showMessage(messageId, "수정 중인 기록입니다.");
 
-  f.scrollIntoView({
-    behavior: "smooth",
-    block: "center"
-  });
+  f.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
-function bindEventForm(
-  formId,
-  type,
-  collectionName,
-  cancelId,
-  dateId,
-  messageId
-) {
+function bindEventForm(formId, type, collectionName, cancelId, dateId, messageId) {
   $(formId).addEventListener("submit", async e => {
     e.preventDefault();
 
     const f = e.currentTarget;
     const btn = f.querySelector('[type="submit"]');
-
     btn.disabled = true;
 
     try {
@@ -375,36 +318,21 @@ function bindEventForm(
         data.intensity > 5 ||
         data.duration < 0
       ) {
-        throw new Error(
-          "날짜, 시간, 유형, 강도, 지속 시간을 확인해 주세요."
-        );
+        throw new Error("날짜, 시간, 유형, 강도, 지속 시간을 확인해 주세요.");
       }
 
-      await saveDoc(
-        collectionName,
-        f.elements.id.value,
-        data
-      );
-
+      await saveDoc(collectionName, f.elements.id.value, data);
       await refreshData();
 
-      resetEventForm(
-        formId,
-        cancelId,
-        dateId,
-        messageId
-      );
-
+      resetEventForm(formId, cancelId, dateId, messageId);
       showMessage(messageId, "기록을 저장했어요.");
 
       await renderCurrent();
     } catch (err) {
       console.error(err);
-
       showMessage(
         messageId,
-        err.message ||
-          "저장하지 못했어요. Firebase 설정을 확인해 주세요.",
+        err.message || "저장하지 못했어요. Firebase 설정을 확인해 주세요.",
         true
       );
     } finally {
@@ -413,46 +341,26 @@ function bindEventForm(
   });
 
   $(cancelId).addEventListener("click", () => {
-    resetEventForm(
-      formId,
-      cancelId,
-      dateId,
-      messageId
-    );
+    resetEventForm(formId, cancelId, dateId, messageId);
   });
 }
 
 bindEventForm(
-  "behaviorForm",
-  "behavior",
-  C.behavior,
-  "cancelBehaviorEdit",
-  "behaviorDate",
-  "behaviorMessage"
+  "behaviorForm", "behavior", C.behavior,
+  "cancelBehaviorEdit", "behaviorDate", "behaviorMessage"
 );
 
 bindEventForm(
-  "cryingForm",
-  "crying",
-  C.crying,
-  "cancelCryingEdit",
-  "cryDate",
-  "cryingMessage"
+  "cryingForm", "crying", C.crying,
+  "cancelCryingEdit", "cryDate", "cryingMessage"
 );
 
-function renderEventList(
-  containerId,
-  records,
-  type
-) {
+function renderEventList(containerId, records, type) {
   const container = $(containerId);
   container.innerHTML = "";
 
   if (!records.length) {
-    showEmpty(
-      containerId,
-      "선택한 달에 기록이 없어요."
-    );
+    showEmpty(containerId, "선택한 달에 기록이 없어요.");
     return;
   }
 
@@ -465,25 +373,17 @@ function renderEventList(
         actions: [
           {
             label: "수정",
-            onClick: () =>
-              populateEventForm(
-                type === "behavior"
-                  ? "behaviorForm"
-                  : "cryingForm",
-                r,
-                type === "behavior"
-                  ? "cancelBehaviorEdit"
-                  : "cancelCryingEdit",
-                type === "behavior"
-                  ? "behaviorMessage"
-                  : "cryingMessage"
-              )
+            onClick: () => populateEventForm(
+              type === "behavior" ? "behaviorForm" : "cryingForm",
+              r,
+              type === "behavior" ? "cancelBehaviorEdit" : "cancelCryingEdit",
+              type === "behavior" ? "behaviorMessage" : "cryingMessage"
+            )
           },
           {
             label: "삭제",
             danger: true,
-            onClick: () =>
-              deleteAndRefresh(C[type], r.id)
+            onClick: () => deleteAndRefresh(C[type], r.id)
           }
         ]
       })
@@ -491,10 +391,7 @@ function renderEventList(
   });
 }
 
-async function deleteAndRefresh(
-  collectionName,
-  id
-) {
+async function deleteAndRefresh(collectionName, id) {
   if (!confirm("이 기록을 삭제할까요?")) return;
 
   try {
@@ -517,40 +414,23 @@ function renderEventStats(type, prefix) {
   const durations = rs.map(r => num(r.duration));
 
   $(`${prefix}StatCount`).textContent = rs.length;
-
-  $(`${prefix}StatDays`).textContent =
-    new Set(rs.map(r => r.date)).size;
-
-  $(`${prefix}StatIntensity`).textContent =
-    displayNum(avg(intensities));
-
+  $(`${prefix}StatDays`).textContent = new Set(rs.map(r => r.date)).size;
+  $(`${prefix}StatIntensity`).textContent = displayNum(avg(intensities));
   $(`${prefix}StatDuration`).textContent =
-    avg(durations) == null
-      ? "-"
-      : `${displayNum(avg(durations))}분`;
+    avg(durations) == null ? "-" : `${displayNum(avg(durations))}분`;
 }
 
 async function renderBehavior() {
-  $("behaviorMonth").textContent =
-    monthLabel(months.behavior);
-
+  $("behaviorMonth").textContent = monthLabel(months.behavior);
   renderEventStats("behavior", "behavior");
-
-  renderEventList(
-    "behaviorList",
-    monthRecords("behavior"),
-    "behavior"
-  );
+  renderEventList("behaviorList", monthRecords("behavior"), "behavior");
 
   const counts = new Map(
     ["타해", "자해", "물건 던지기", "그외"].map(x => [x, 0])
   );
 
   monthRecords("behavior").forEach(r => {
-    counts.set(
-      r.type,
-      (counts.get(r.type) || 0) + 1
-    );
+    counts.set(r.type, (counts.get(r.type) || 0) + 1);
   });
 
   const box = $("behaviorTypeStats");
@@ -572,26 +452,20 @@ async function renderBehavior() {
 }
 
 async function renderCrying() {
-  $("cryingMonth").textContent =
-    monthLabel(months.crying);
-
+  $("cryingMonth").textContent = monthLabel(months.crying);
   renderEventStats("crying", "cry");
-
-  renderEventList(
-    "cryingList",
-    monthRecords("crying"),
-    "crying"
-  );
+  renderEventList("cryingList", monthRecords("crying"), "crying");
 }
 
 // 체중 기록
+// 같은 날짜에 저장된 기록이 있으면 기존 문서를 갱신하고,
+// 과거에 같은 날짜로 중복 저장된 문서도 함께 정리한다.
 
 $("weightForm").addEventListener("submit", async e => {
   e.preventDefault();
 
   const f = e.currentTarget;
   const btn = f.querySelector('[type="submit"]');
-
   btn.disabled = true;
 
   try {
@@ -601,16 +475,25 @@ $("weightForm").addEventListener("submit", async e => {
     };
 
     if (!data.date || data.weight <= 0) {
-      throw new Error(
-        "측정 날짜와 체중을 확인해 주세요."
-      );
+      throw new Error("측정 날짜와 체중을 확인해 주세요.");
     }
 
-    await saveDoc(
-      C.weight,
-      f.elements.id.value,
-      data
+    const editingId = f.elements.id.value;
+
+    const sameDate = cache.weight.filter(
+      r => r.date === data.date && r.id !== editingId
     );
+
+    const existing = sameDate[0];
+    const weightId = editingId || existing?.id || data.date;
+
+    await saveDoc(C.weight, weightId, data);
+
+    const duplicates = sameDate.filter(r => r.id !== weightId);
+
+    for (const r of duplicates) {
+      await removeDoc(C.weight, r.id);
+    }
 
     await refreshData();
 
@@ -620,16 +503,10 @@ $("weightForm").addEventListener("submit", async e => {
     $("cancelWeightEdit").classList.add("hidden");
 
     showMessage("weightMessage", "체중을 저장했어요.");
-
     await renderWeight();
   } catch (err) {
     console.error(err);
-
-    showMessage(
-      "weightMessage",
-      err.message || "저장하지 못했어요.",
-      true
-    );
+    showMessage("weightMessage", err.message || "저장하지 못했어요.", true);
   } finally {
     btn.disabled = false;
   }
@@ -642,7 +519,6 @@ $("cancelWeightEdit").addEventListener("click", () => {
   f.elements.id.value = "";
   $("weightDate").value = localDate();
   $("cancelWeightEdit").classList.add("hidden");
-
   showMessage("weightMessage", "");
 });
 
@@ -651,28 +527,17 @@ function renderWeightChart(records) {
   el.innerHTML = "";
 
   if (!records.length) {
-    showEmpty(
-      "weightChart",
-      "선택한 달의 체중 기록이 없어요."
-    );
+    showEmpty("weightChart", "선택한 달의 체중 기록이 없어요.");
     return;
   }
 
-  const sorted = [...records].sort(
-    (a, b) => a.date.localeCompare(b.date)
-  );
+  const sorted = [...records].sort((a, b) => a.date.localeCompare(b.date));
 
-  const w = 600;
-  const h = 235;
-  const l = 48;
-  const r = 18;
-  const t = 20;
-  const b = 35;
+  const w = 600, h = 235, l = 48, r = 18, t = 20, b = 35;
   const pw = w - l - r;
   const ph = h - t - b;
 
   const vals = sorted.map(x => num(x.weight));
-
   let min = Math.min(...vals);
   let max = Math.max(...vals);
 
@@ -682,72 +547,41 @@ function renderWeightChart(records) {
   }
 
   const pad = (max - min) * 0.15;
-
   min -= pad;
   max += pad;
 
-  const x = i =>
-    l +
-    (sorted.length === 1
-      ? pw / 2
-      : (i / (sorted.length - 1)) * pw);
+  const x = i => l + (
+    sorted.length === 1 ? pw / 2 : (i / (sorted.length - 1)) * pw
+  );
 
-  const y = v =>
-    t + ((max - v) / (max - min)) * ph;
+  const y = v => t + ((max - v) / (max - min)) * ph;
 
-  let svg =
-    `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="월별 체중 변화 그래프">`;
+  let svg = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="월별 체중 변화 그래프">`;
 
   for (let i = 0; i < 5; i++) {
     const val = min + ((max - min) * i) / 4;
     const yy = y(val);
 
     svg += `
-      <line
-        x1="${l}"
-        y1="${yy}"
-        x2="${w - r}"
-        y2="${yy}"
-        stroke="currentColor"
-        stroke-opacity=".13"
-      />
-      <text
-        x="${l - 8}"
-        y="${yy + 4}"
-        text-anchor="end"
-        font-size="11"
-        fill="currentColor"
-      >${val.toFixed(1)}</text>
+      <line x1="${l}" y1="${yy}" x2="${w - r}" y2="${yy}"
+        stroke="currentColor" stroke-opacity=".13" />
+      <text x="${l - 8}" y="${yy + 4}" text-anchor="end"
+        font-size="11" fill="currentColor">${val.toFixed(1)}</text>
     `;
   }
 
   const points = sorted
-    .map((v, i) =>
-      `${i ? "L" : "M"} ${x(i)} ${y(num(v.weight))}`
-    )
+    .map((v, i) => `${i ? "L" : "M"} ${x(i)} ${y(num(v.weight))}`)
     .join(" ");
 
-  svg += `
-    <path
-      d="${points}"
-      fill="none"
-      stroke="#c66c94"
-      stroke-width="3"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-    />
-  `;
+  svg += `<path d="${points}" fill="none" stroke="#c66c94"
+    stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />`;
 
   sorted.forEach((v, i) => {
     const day = Number(v.date.slice(-2));
 
     svg += `
-      <circle
-        cx="${x(i)}"
-        cy="${y(num(v.weight))}"
-        r="4"
-        fill="#c66c94"
-      >
+      <circle cx="${x(i)}" cy="${y(num(v.weight))}" r="4" fill="#c66c94">
         <title>${day}일 · ${num(v.weight).toFixed(1)}kg</title>
       </circle>
     `;
@@ -757,50 +591,35 @@ function renderWeightChart(records) {
     0,
     Math.floor((sorted.length - 1) / 2),
     sorted.length - 1
-  ]
-    .filter((v, i, a) => a.indexOf(v) === i)
-    .forEach(i => {
-      svg += `
-        <text
-          x="${x(i)}"
-          y="${h - 10}"
-          text-anchor="middle"
-          font-size="11"
-          fill="currentColor"
-        >${Number(sorted[i].date.slice(-2))}일</text>
-      `;
-    });
+  ].filter((v, i, a) => a.indexOf(v) === i).forEach(i => {
+    svg += `
+      <text x="${x(i)}" y="${h - 10}" text-anchor="middle"
+        font-size="11" fill="currentColor">${Number(sorted[i].date.slice(-2))}일</text>
+    `;
+  });
 
   svg += "</svg>";
   el.innerHTML = svg;
 }
 
 async function renderWeight() {
-  $("weightMonth").textContent =
-    monthLabel(months.weight);
+  $("weightMonth").textContent = monthLabel(months.weight);
 
-  const rs = monthRecords("weight").sort(
-    (a, b) => a.date.localeCompare(b.date)
-  );
+  const rs = monthRecords("weight").sort((a, b) => a.date.localeCompare(b.date));
 
   $("weightFirst").textContent = rs.length
-    ? `${num(rs[0].weight).toFixed(1)}kg`
-    : "-";
+    ? `${num(rs[0].weight).toFixed(1)}kg` : "-";
 
   $("weightLast").textContent = rs.length
-    ? `${num(rs[rs.length - 1].weight).toFixed(1)}kg`
-    : "-";
+    ? `${num(rs[rs.length - 1].weight).toFixed(1)}kg` : "-";
 
-  const change =
-    rs.length > 1
-      ? num(rs[rs.length - 1].weight) -
-        num(rs[0].weight)
-      : null;
+  const change = rs.length > 1
+    ? num(rs[rs.length - 1].weight) - num(rs[0].weight)
+    : null;
 
-  $("weightChange").textContent =
-    change == null
-      ? "-"
-      : `${change > 0 ? "+" : ""}${change.toFixed(1)}kg`;
+  $("weightChange").textContent = change == null
+    ? "-"
+    : `${change > 0 ? "+" : ""}${change.toFixed(1)}kg`;
 
   renderWeightChart(rs);
 
@@ -828,20 +647,15 @@ async function renderWeight() {
               f.elements.id.value = r.id;
               f.elements.date.value = r.date;
               f.elements.weight.value = r.weight;
-
               $("cancelWeightEdit").classList.remove("hidden");
 
-              f.scrollIntoView({
-                behavior: "smooth",
-                block: "center"
-              });
+              f.scrollIntoView({ behavior: "smooth", block: "center" });
             }
           },
           {
             label: "삭제",
             danger: true,
-            onClick: () =>
-              deleteAndRefresh(C.weight, r.id)
+            onClick: () => deleteAndRefresh(C.weight, r.id)
           }
         ]
       })
@@ -854,32 +668,253 @@ async function renderWeight() {
 function activeMeds() {
   return cache.meds
     .filter(m => m.active !== false)
-    .sort((a, b) =>
-      (a.name || "").localeCompare(b.name || "", "ko")
-    );
+    .sort((a, b) => (a.name || "").localeCompare(b.name || "", "ko"));
 }
 
-function renderMedOptions() {
-  const select = $("changeMedication");
-  const current = select.value;
+function resetMedicationForm(clearMessage = true) {
+  const f = $("medicationForm");
 
-  select.innerHTML =
-    '<option value="">약물을 선택해 주세요</option>';
+  f.reset();
+  f.elements.id.value = "";
+  $("medManageSelect").value = "";
+  $("medStartDate").value = localDate();
+  $("medStatus").value = "true";
+  $("cancelMedicationEdit").classList.add("hidden");
 
-  cache.meds.forEach(m => {
-    const o = document.createElement("option");
+  const submit = f.querySelector('[type="submit"]');
+  submit.textContent = "약물 등록";
 
-    o.value = m.id;
-    o.textContent =
-      `${m.name}${m.active === false ? " (중단됨)" : ""}`;
+  if (clearMessage) showMessage("medicationMessage", "");
+}
 
-    select.append(o);
-  });
+function renderMedicationSelector() {
+  const select = $("medManageSelect");
+  const selectedId = select.value;
 
-  if ([...select.options].some(o => o.value === current)) {
-    select.value = current;
+  select.innerHTML = "";
+
+  const newOption = document.createElement("option");
+  newOption.value = "";
+  newOption.textContent = "＋ 새 약물 등록";
+  select.append(newOption);
+
+  [...cache.meds]
+    .sort((a, b) => (a.name || "").localeCompare(b.name || "", "ko"))
+    .forEach(m => {
+      const option = document.createElement("option");
+      option.value = m.id;
+      option.textContent =
+        `${m.name}${m.active === false ? " (복용 중단)" : ""}`;
+      select.append(option);
+    });
+
+  if (selectedId && cache.meds.some(m => m.id === selectedId)) {
+    select.value = selectedId;
   }
 }
+
+function selectMedicationForEdit(id) {
+  const f = $("medicationForm");
+
+  if (!id) {
+    resetMedicationForm();
+    return;
+  }
+
+  const med = cache.meds.find(m => m.id === id);
+
+  if (!med) {
+    resetMedicationForm();
+    return;
+  }
+
+  f.elements.id.value = med.id;
+  f.elements.name.value = med.name || "";
+  f.elements.dose.value = med.dose || "";
+  f.elements.startDate.value = med.startDate || localDate();
+  f.elements.active.value = med.active === false ? "false" : "true";
+
+  $("cancelMedicationEdit").classList.remove("hidden");
+  f.querySelector('[type="submit"]').textContent = "변경사항 저장";
+
+  showMessage("medicationMessage", "선택한 약물의 정보를 수정할 수 있어요.");
+}
+
+$("medManageSelect").addEventListener("change", e => {
+  selectMedicationForEdit(e.target.value);
+});
+
+$("cancelMedicationEdit").addEventListener("click", () => {
+  resetMedicationForm();
+});
+
+// 약물 등록 및 수정 시 변경 이력을 함께 저장한다.
+
+$("medicationForm").addEventListener("submit", async e => {
+  e.preventDefault();
+
+  const f = e.currentTarget;
+  const btn = f.querySelector('[type="submit"]');
+  btn.disabled = true;
+
+  try {
+    const editingId = f.elements.id.value;
+    const existing = editingId
+      ? cache.meds.find(m => m.id === editingId)
+      : null;
+
+    const data = {
+      name: f.elements.name.value.trim(),
+      dose: f.elements.dose.value.trim(),
+      startDate: f.elements.startDate.value,
+      active: f.elements.active.value === "true"
+    };
+
+    if (!data.name || !data.startDate) {
+      throw new Error("약물명과 시작 날짜를 입력해 주세요.");
+    }
+
+    const id = editingId || newId();
+    const now = localDate();
+
+    if (!existing) {
+      // 신규 약물 등록
+      await saveDoc(C.meds, id, data);
+
+      await saveDoc(C.changes, newId(), {
+        date: now,
+        medicationId: id,
+        medicationName: data.name,
+        action: "등록",
+        dose: data.dose,
+        note:
+          `약물 등록 · 용량·복용법: ${data.dose || "미입력"} · ` +
+          `시작 날짜: ${formatDate(data.startDate)} · ` +
+          `상태: ${data.active ? "복용 중" : "복용 중단"}`
+      });
+
+      showMessage("medicationMessage", "약물을 등록하고 변경 이력을 저장했어요.");
+    } else {
+      const nameChanged = existing.name !== data.name;
+      const doseChanged = (existing.dose || "") !== data.dose;
+      const startChanged = (existing.startDate || "") !== data.startDate;
+      const statusChanged = (existing.active !== false) !== data.active;
+
+      if (!nameChanged && !doseChanged && !startChanged && !statusChanged) {
+        showMessage("medicationMessage", "변경된 내용이 없어요.");
+        return;
+      }
+
+      await saveDoc(C.meds, id, data);
+
+      if (nameChanged || doseChanged || startChanged) {
+        const details = [];
+
+        if (nameChanged) {
+          details.push(`약물명: ${existing.name || "미입력"} → ${data.name}`);
+        }
+
+        if (doseChanged) {
+          details.push(`용량·복용법: ${existing.dose || "미입력"} → ${data.dose || "미입력"}`);
+        }
+
+        if (startChanged) {
+          details.push(`시작 날짜: ${formatDate(existing.startDate)} → ${formatDate(data.startDate)}`);
+        }
+
+        await saveDoc(C.changes, newId(), {
+          date: now,
+          medicationId: id,
+          medicationName: data.name,
+          action: "정보 수정",
+          dose: data.dose,
+          note: details.join("\n")
+        });
+      }
+
+      if (statusChanged) {
+        await saveDoc(C.changes, newId(), {
+          date: now,
+          medicationId: id,
+          medicationName: data.name,
+          action: data.active ? "복용 재개" : "복용 중단",
+          dose: data.dose,
+          note: `복용 상태 변경: ${existing.active === false ? "복용 중단" : "복용 중"} → ${data.active ? "복용 중" : "복용 중단"}`
+        });
+      }
+
+      showMessage("medicationMessage", "약물 정보를 수정하고 변경 이력을 저장했어요.");
+    }
+
+    await refreshData();
+
+    resetMedicationForm(false);
+    renderMedicationSelector();
+    await renderMedication();
+
+    // 화면 갱신 뒤 완료 메시지를 유지한다.
+    showMessage(
+      "medicationMessage",
+      existing
+        ? "약물 정보를 수정하고 변경 이력을 저장했어요."
+        : "약물을 등록하고 변경 이력을 저장했어요."
+    );
+  } catch (err) {
+    console.error(err);
+    showMessage(
+      "medicationMessage",
+      err.message || "약물을 저장하지 못했어요.",
+      true
+    );
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// 약물 삭제 버튼: 선택한 약물 정보만 삭제하며 기존 복용 기록과 변경 이력은 유지한다.
+
+const deleteMedicationButton = document.createElement("button");
+deleteMedicationButton.type = "button";
+deleteMedicationButton.id = "deleteMedicationButton";
+deleteMedicationButton.className = "button button-secondary";
+deleteMedicationButton.textContent = "선택한 약물 삭제";
+deleteMedicationButton.hidden = true;
+
+$("medicationForm").querySelector(".form-actions").append(deleteMedicationButton);
+
+deleteMedicationButton.addEventListener("click", async () => {
+  const id = $("medicationForm").elements.id.value;
+  const med = cache.meds.find(m => m.id === id);
+
+  if (!med) return;
+
+  if (!confirm(`${med.name} 약물 정보를 삭제할까요? 기존 복용 기록과 변경 이력은 유지됩니다.`)) {
+    return;
+  }
+
+  deleteMedicationButton.disabled = true;
+
+  try {
+    await removeDoc(C.meds, id);
+    await refreshData();
+    resetMedicationForm();
+    renderMedicationSelector();
+    await renderMedication();
+    showMessage("medicationMessage", "약물 정보를 삭제했어요.");
+  } catch (err) {
+    console.error(err);
+    showMessage("medicationMessage", "약물을 삭제하지 못했어요.", true);
+  } finally {
+    deleteMedicationButton.disabled = false;
+  }
+});
+
+// 선택 여부에 따라 삭제 버튼을 표시한다.
+$("medManageSelect").addEventListener("change", () => {
+  deleteMedicationButton.hidden = !$("medManageSelect").value;
+});
+
+// 복용 체크
 
 function renderMedicationChecks() {
   const box = $("medicationChecks");
@@ -888,10 +923,7 @@ function renderMedicationChecks() {
   const meds = activeMeds();
 
   if (!meds.length) {
-    showEmpty(
-      "medicationChecks",
-      "먼저 복용 중인 약물을 등록해 주세요."
-    );
+    showEmpty("medicationChecks", "현재 복용 중인 약물이 없어요.");
     return;
   }
 
@@ -924,90 +956,32 @@ function renderMedicationChecks() {
   });
 }
 
-$("medicationForm").addEventListener("submit", async e => {
-  e.preventDefault();
-
-  const f = e.currentTarget;
-
-  try {
-    const id = f.elements.id.value || newId();
-
-    const data = {
-      name: f.elements.name.value.trim(),
-      dose: f.elements.dose.value.trim(),
-      startDate: f.elements.startDate.value,
-      active: true
-    };
-
-    if (!data.name || !data.startDate) {
-      throw new Error(
-        "약물명과 시작 날짜를 입력해 주세요."
-      );
-    }
-
-    await saveDoc(C.meds, id, data);
-    await refreshData();
-
-    f.reset();
-    f.elements.id.value = "";
-    $("medStartDate").value = localDate();
-    $("cancelMedicationEdit").classList.add("hidden");
-
-    showMessage("medicationMessage", "약물을 저장했어요.");
-
-    await renderMedication();
-  } catch (err) {
-    console.error(err);
-
-    showMessage(
-      "medicationMessage",
-      err.message || "약물을 저장하지 못했어요.",
-      true
-    );
-  }
+$("medLogDate").addEventListener("change", () => {
+  renderMedicationChecks();
+  showMessage("medicationLogMessage", "");
 });
-
-$("cancelMedicationEdit").addEventListener("click", () => {
-  const f = $("medicationForm");
-
-  f.reset();
-  f.elements.id.value = "";
-  $("medStartDate").value = localDate();
-  $("cancelMedicationEdit").classList.add("hidden");
-
-  showMessage("medicationMessage", "");
-});
-
-$("medLogDate").addEventListener(
-  "change",
-  renderMedicationChecks
-);
 
 $("medicationLogForm").addEventListener("submit", async e => {
   e.preventDefault();
 
+  const btn = e.currentTarget.querySelector('[type="submit"]');
+  btn.disabled = true;
+
   try {
     const date = $("medLogDate").value;
 
-    if (!date) {
-      throw new Error("복용 기록 날짜를 선택해 주세요.");
-    }
+    if (!date) throw new Error("복용 기록 날짜를 선택해 주세요.");
 
     const checks = [
-      ...$("medicationChecks").querySelectorAll(
-        'input[type="checkbox"]'
-      )
+      ...$("medicationChecks").querySelectorAll('input[type="checkbox"]')
     ];
 
-    if (!checks.length) {
-      throw new Error("먼저 약물을 등록해 주세요.");
-    }
+    if (!checks.length) throw new Error("먼저 복용 중인 약물을 등록해 주세요.");
+
+    const note = $("medLogNote").value.trim();
 
     for (const cb of checks) {
-      const med = cache.meds.find(
-        m => m.id === cb.dataset.medId
-      );
-
+      const med = cache.meds.find(m => m.id === cb.dataset.medId);
       const id = `${date}_${cb.dataset.medId}`;
 
       await saveDoc(C.logs, id, {
@@ -1016,280 +990,144 @@ $("medicationLogForm").addEventListener("submit", async e => {
         medicationName: med?.name || "삭제된 약물",
         dose: med?.dose || "",
         taken: cb.checked,
-        note: $("medLogNote").value.trim()
+        note
       });
     }
 
     await refreshData();
 
-    showMessage(
-      "medicationLogMessage",
-      "복용 여부를 저장했어요."
-    );
-
+    showMessage("medicationLogMessage", "복용 여부를 저장했어요.");
     await renderMedication();
   } catch (err) {
     console.error(err);
-
     showMessage(
       "medicationLogMessage",
       err.message || "복용 기록을 저장하지 못했어요.",
       true
     );
+  } finally {
+    btn.disabled = false;
   }
 });
 
-$("medChangeForm").addEventListener("submit", async e => {
-  e.preventDefault();
+// 약물 변경 이력
 
-  const f = e.currentTarget;
-
-  try {
-    const data = {
-      date: f.elements.date.value,
-      medicationId: f.elements.medicationId.value,
-      action: f.elements.action.value,
-      dose: f.elements.dose.value.trim(),
-      note: f.elements.note.value.trim()
-    };
-
-    if (!data.date || !data.medicationId || !data.action) {
-      throw new Error(
-        "변경 날짜, 약물, 변경 유형을 입력해 주세요."
-      );
-    }
-
-    const med = cache.meds.find(
-      m => m.id === data.medicationId
-    );
-
-    if (!med) {
-      throw new Error("선택한 약물을 찾을 수 없어요.");
-    }
-
-    await saveDoc(C.changes, f.elements.id.value, data);
-
-    if (data.action === "중단") {
-      await setDoc(doc(db, C.meds, med.id), {
-        ...med,
-        active: false,
-        updatedAt: new Date().toISOString()
-      });
-    } else if (data.action === "추가") {
-      await setDoc(doc(db, C.meds, med.id), {
-        ...med,
-        active: true,
-        ...(data.dose ? { dose: data.dose } : {}),
-        updatedAt: new Date().toISOString()
-      });
-    } else if (data.action === "용량 변경" && data.dose) {
-      await setDoc(doc(db, C.meds, med.id), {
-        ...med,
-        dose: data.dose,
-        updatedAt: new Date().toISOString()
-      });
-    }
-
-    await refreshData();
-
-    f.reset();
-    f.elements.id.value = "";
-    $("changeDate").value = localDate();
-    $("cancelChangeEdit").classList.add("hidden");
-
-    showMessage(
-      "medChangeMessage",
-      "약물 변경 이력을 저장했어요."
-    );
-
-    await renderMedication();
-  } catch (err) {
-    console.error(err);
-
-    showMessage(
-      "medChangeMessage",
-      err.message || "변경 이력을 저장하지 못했어요.",
-      true
-    );
-  }
-});
-
-$("cancelChangeEdit").addEventListener("click", () => {
-  const f = $("medChangeForm");
-
-  f.reset();
-  f.elements.id.value = "";
-  $("changeDate").value = localDate();
-  $("cancelChangeEdit").classList.add("hidden");
-
-  showMessage("medChangeMessage", "");
-});
-
-async function renderMedication() {
-  renderMedOptions();
-  renderMedicationChecks();
-
-  const medsBox = $("medicationList");
-  medsBox.innerHTML = "";
-
-  if (!cache.meds.length) {
-    showEmpty("medicationList", "등록된 약물이 없어요.");
-  } else {
-    cache.meds
-      .sort((a, b) =>
-        (a.name || "").localeCompare(b.name || "", "ko")
-      )
-      .forEach(m => {
-        medsBox.append(
-          itemCard({
-            title: m.name,
-            meta:
-              `${m.active === false ? "복용 중단" : "복용 중"} · ` +
-              `${m.dose || "용량 미입력"} · 시작 ${formatDate(m.startDate)}`,
-            actions: [
-              {
-                label: "수정",
-                onClick: () => {
-                  const f = $("medicationForm");
-
-                  f.elements.id.value = m.id;
-                  f.elements.name.value = m.name;
-                  f.elements.dose.value = m.dose || "";
-                  f.elements.startDate.value =
-                    m.startDate || localDate();
-
-                  $("cancelMedicationEdit").classList.remove("hidden");
-
-                  f.scrollIntoView({
-                    behavior: "smooth",
-                    block: "center"
-                  });
-                }
-              },
-              {
-                label: m.active === false ? "복용 재개" : "복용 중단",
-                onClick: async () => {
-                  const next = m.active === false;
-
-                  try {
-                    await setDoc(doc(db, C.meds, m.id), {
-                      ...m,
-                      active: next,
-                      updatedAt: new Date().toISOString()
-                    });
-
-                    await saveDoc(C.changes, newId(), {
-                      date: localDate(),
-                      medicationId: m.id,
-                      action: next ? "추가" : "중단",
-                      dose: m.dose || "",
-                      note: "약물 목록에서 상태 변경"
-                    });
-
-                    await refreshData();
-                    await renderMedication();
-                  } catch (err) {
-                    console.error(err);
-                    alert("약물 상태를 변경하지 못했어요.");
-                  }
-                }
-              },
-              {
-                label: "삭제",
-                danger: true,
-                onClick: () => deleteAndRefresh(C.meds, m.id)
-              }
-            ]
-          })
-        );
-      });
-  }
-
-  const changesBox = $("medicationChanges");
-  changesBox.innerHTML = "";
+async function renderMedicationChanges() {
+  const box = $("medicationChanges");
+  box.innerHTML = "";
 
   const changes = sortNewest(cache.changes);
 
   if (!changes.length) {
-    showEmpty(
-      "medicationChanges",
-      "약물 변경 이력이 없어요."
-    );
-  } else {
-    changes.forEach(r => {
-      const med = cache.meds.find(
-        m => m.id === r.medicationId
-      );
-
-      changesBox.append(
-        itemCard({
-          title:
-            `${formatDate(r.date)} · ` +
-            `${med?.name || r.medicationName || "약물"} · ${r.action}`,
-          meta: r.dose
-            ? `변경 후 용량·복용법: ${r.dose}`
-            : "변경 후 용량 미기록",
-          context: r.note,
-          actions: [
-            {
-              label: "수정",
-              onClick: () => {
-                const f = $("medChangeForm");
-
-                f.elements.id.value = r.id;
-                f.elements.date.value = r.date;
-                f.elements.medicationId.value = r.medicationId;
-                f.elements.action.value = r.action;
-                f.elements.dose.value = r.dose || "";
-                f.elements.note.value = r.note || "";
-
-                $("cancelChangeEdit").classList.remove("hidden");
-
-                f.scrollIntoView({
-                  behavior: "smooth",
-                  block: "center"
-                });
-              }
-            },
-            {
-              label: "삭제",
-              danger: true,
-              onClick: () => deleteAndRefresh(C.changes, r.id)
-            }
-          ]
-        })
-      );
-    });
+    showEmpty("medicationChanges", "약물 변경 이력이 없어요.");
+    return;
   }
 
+  changes.forEach(r => {
+    box.append(
+      itemCard({
+        title:
+          `${formatDate(r.date)} · ` +
+          `${r.medicationName || "약물"} · ${r.action || "변경"}`,
+        meta: r.dose
+          ? `용량·복용법: ${r.dose}`
+          : "용량·복용법 미입력",
+        context: r.note,
+        actions: [
+          {
+            label: "삭제",
+            danger: true,
+            onClick: () => deleteAndRefresh(C.changes, r.id)
+          }
+        ]
+      })
+    );
+  });
+}
+
+// 복용 기록 조회
+
+async function renderMedicationLogHistory() {
   const logBox = $("medicationLogHistory");
   logBox.innerHTML = "";
 
-  const logs = sortNewest(cache.logs);
+  $("medicationLogsMonth").textContent = monthLabel(months.medicationLogs);
+
+  const logs = sortNewest(
+    cache.logs.filter(r => (r.date || "").startsWith(months.medicationLogs))
+  );
 
   if (!logs.length) {
-    showEmpty("medicationLogHistory", "복용 기록이 없어요.");
-  } else {
-    logs.forEach(r => {
-      logBox.append(
-        itemCard({
-          title: `${formatDate(r.date)} · ${r.medicationName || "약물"}`,
-          meta: `${r.taken ? "복용" : "미복용"} · ${r.dose || "용량 미입력"}`,
-          context: r.note,
-          actions: [
-            {
-              label: "삭제",
-              danger: true,
-              onClick: () => deleteAndRefresh(C.logs, r.id)
-            }
-          ]
-        })
-      );
-    });
+    showEmpty("medicationLogHistory", "선택한 달에 복용 기록이 없어요.");
+    return;
   }
+
+  const grouped = new Map();
+
+  logs.forEach(r => {
+    if (!grouped.has(r.date)) grouped.set(r.date, []);
+    grouped.get(r.date).push(r);
+  });
+
+  grouped.forEach((dayLogs, date) => {
+    const takenCount = dayLogs.filter(r => r.taken).length;
+    const notTakenCount = dayLogs.filter(r => !r.taken).length;
+
+    const details = dayLogs
+      .map(r =>
+        `${r.medicationName || "약물"}: ${r.taken ? "복용" : "미복용"} (${r.dose || "용량 미입력"})`
+      )
+      .join("\n");
+
+    const notes = [
+      ...new Set(dayLogs.map(r => (r.note || "").trim()).filter(Boolean))
+    ].join("\n");
+
+    logBox.append(
+      itemCard({
+        title: formatDate(date),
+        meta: `${takenCount}개 복용 · ${notTakenCount}개 미복용`,
+        context: details + (notes ? `\n메모: ${notes}` : ""),
+        actions: [
+          {
+            label: "이 날짜 기록 전체 삭제",
+            danger: true,
+            onClick: async () => {
+              if (!confirm(`${formatDate(date)} 복용 기록을 모두 삭제할까요?`)) {
+                return;
+              }
+
+              try {
+                for (const r of dayLogs) {
+                  await removeDoc(C.logs, r.id);
+                }
+
+                await refreshData();
+                await renderMedication();
+              } catch (err) {
+                console.error(err);
+                alert("복용 기록을 삭제하지 못했어요.");
+              }
+            }
+          }
+        ]
+      })
+    );
+  });
 }
 
-// 대시보드: 최근 기록만 표시하며 전체기록 화면은 없음
+async function renderMedication() {
+  renderMedicationSelector();
+  renderMedicationChecks();
+
+  const selectedId = $("medManageSelect").value;
+  deleteMedicationButton.hidden = !selectedId;
+
+  await renderMedicationChanges();
+  await renderMedicationLogHistory();
+}
+
+// 대시보드
 
 async function renderDashboard() {
   $("todayLabel").textContent = formatDate(today);
@@ -1306,14 +1144,10 @@ async function renderDashboard() {
     ? num(latestWeight.weight).toFixed(1)
     : "-";
 
-  const todaysLogs = cache.logs.filter(
-    r => r.date === today
-  );
+  const todaysLogs = cache.logs.filter(r => r.date === today);
 
   $("dashMeds").textContent =
     todaysLogs.filter(r => r.taken).length;
-
-  
 }
 
 // 날짜 기본값 및 첫 화면
@@ -1323,7 +1157,6 @@ for (const id of [
   "cryDate",
   "weightDate",
   "medStartDate",
-  "changeDate",
   "medLogDate"
 ]) {
   $(id).value = today;
@@ -1331,8 +1164,9 @@ for (const id of [
 
 try {
   await refreshData();
+  await renderMedication();
   await renderDashboard();
 } catch (error) {
   console.error("초기 데이터 불러오기 오류:", error);
-  showEmpty("recentRecords", "Firebase 설정을 확인해 주세요.");
+  alert("데이터를 불러오지 못했어요. Firebase 설정과 Firestore 보안 규칙을 확인해 주세요.");
 }
