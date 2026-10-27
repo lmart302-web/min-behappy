@@ -1,4 +1,3 @@
-
 import { db } from "./firebase.js";
 
 import {
@@ -44,6 +43,12 @@ let cache = {
 };
 
 let activeView = "dashboard";
+
+// 약물 변경 이력 수정 상태
+let editingChangeId = "";
+
+// 복용 기록 수정 상태
+let editingLogDate = "";
 
 function newId() {
   return crypto.randomUUID
@@ -120,7 +125,6 @@ async function refreshData() {
 
 async function saveDoc(collectionName, id, data) {
   const finalId = id || newId();
-
   const now = new Date().toISOString();
 
   await setDoc(doc(db, collectionName, finalId), {
@@ -461,7 +465,6 @@ async function renderCrying() {
 }
 
 // 체중 기록
-// 같은 날짜의 중복 기록을 정리하고 날짜별 한 건만 유지한다.
 
 $("weightForm").addEventListener("submit", async e => {
   e.preventDefault();
@@ -628,8 +631,7 @@ async function renderWeight() {
   const list = $("weightList");
   list.innerHTML = "";
 
-  // 기존처럼 전체 체중 기록 목록을 표시한다.
-  const all = sortNewest(cache.weight);
+  const all = monthRecords("weight");
 
   if (!all.length) {
     showEmpty("weightList");
@@ -674,7 +676,29 @@ function activeMeds() {
     .sort((a, b) => (a.name || "").localeCompare(b.name || "", "ko"));
 }
 
+function changeTimestamp(r) {
+  return r.createdAt || r.updatedAt || r.date || "";
+}
+
+function newestChangesFirst(records) {
+  return [...records].sort((a, b) => {
+    const timeCompare = changeTimestamp(b).localeCompare(changeTimestamp(a));
+    if (timeCompare) return timeCompare;
+    return (b.id || "").localeCompare(a.id || "");
+  });
+}
+
+function latestChangeForMedication(medicationId) {
+  if (!medicationId) return null;
+
+  return newestChangesFirst(
+    cache.changes.filter(r => r.medicationId === medicationId)
+  )[0] || null;
+}
+
 function resetMedicationForm(clearMessage = true) {
+  editingChangeId = "";
+
   const f = $("medicationForm");
 
   f.reset();
@@ -731,6 +755,8 @@ function selectMedicationForEdit(id) {
     return;
   }
 
+  editingChangeId = "";
+
   f.elements.id.value = med.id;
   f.elements.name.value = med.name || "";
   f.elements.dose.value = med.dose || "";
@@ -751,8 +777,90 @@ $("cancelMedicationEdit").addEventListener("click", () => {
   resetMedicationForm();
 });
 
+// 약물 변경 이력을 위쪽 약물 폼으로 불러오기
+
+function startMedicationChangeEdit(change) {
+  const f = $("medicationForm");
+
+  editingChangeId = change.id;
+
+  // 이력에 저장된 약물 ID를 유지한다.
+  f.elements.id.value = change.medicationId || "";
+  f.elements.name.value = change.medicationName || "";
+  f.elements.dose.value = change.dose || "";
+  f.elements.startDate.value = change.startDate || localDate();
+  f.elements.active.value = change.active === false ? "false" : "true";
+
+  // 현재 약물 목록에 있는 경우 선택란도 맞춘다.
+  $("medManageSelect").value =
+    cache.meds.some(m => m.id === change.medicationId)
+      ? change.medicationId
+      : "";
+
+  $("cancelMedicationEdit").classList.remove("hidden");
+  f.querySelector('[type="submit"]').textContent = "변경 이력 저장";
+
+  showMessage(
+    "medicationMessage",
+    `${formatDate(change.date)} 이력을 수정 중입니다. 저장하면 해당 이력과 현재 약물 정보가 갱신됩니다.`
+  );
+
+  f.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+// 최신 변경 이력을 삭제한 경우 남아 있는 이력으로 현재 약물 상태를 복구한다.
+
+async function syncMedicationFromLatestChange(medicationId) {
+  if (!medicationId) return;
+
+  const latest = latestChangeForMedication(medicationId);
+
+  if (!latest || latest.action === "삭제") {
+    const current = cache.meds.find(m => m.id === medicationId);
+    if (current) await removeDoc(C.meds, medicationId);
+    return;
+  }
+
+  await saveDoc(C.meds, medicationId, {
+    name: latest.medicationName || "이름 없는 약물",
+    dose: latest.dose || "",
+    startDate: latest.startDate || "",
+    active: latest.active !== false
+  });
+}
+
+async function deleteMedicationChange(change) {
+  const latest = latestChangeForMedication(change.medicationId);
+
+  if (!latest || latest.id !== change.id) {
+    alert("최신 이력만 삭제할 수 있어요.");
+    return;
+  }
+
+  if (!confirm("최신 약물 변경 이력을 삭제할까요?")) return;
+
+  try {
+    await removeDoc(C.changes, change.id);
+
+    // 삭제한 이력보다 이전 이력이 있으면 해당 내용으로 현재 약물 정보를 맞춘다.
+    await refreshData();
+    await syncMedicationFromLatestChange(change.medicationId);
+
+    await refreshData();
+
+    if (editingChangeId === change.id) resetMedicationForm();
+
+    renderMedicationSelector();
+    await renderMedication();
+
+    showMessage("medicationMessage", "변경 이력을 삭제했어요.");
+  } catch (err) {
+    console.error(err);
+    alert("변경 이력을 삭제하지 못했어요.");
+  }
+}
+
 // 복용 상태 선택란에서 약물 삭제
-// 삭제 이력을 먼저 저장하고, 그 다음 실제 약물 정보를 삭제한다.
 
 $("medStatus").addEventListener("change", async e => {
   if (e.target.value !== "delete") return;
@@ -781,7 +889,6 @@ $("medStatus").addEventListener("change", async e => {
     const deletedAt = new Date().toISOString();
     const deletedDate = localDate();
 
-    // 삭제 이력을 별도 문서로 저장한다.
     await saveDoc(C.changes, newId(), {
       date: deletedDate,
       deletedAt,
@@ -800,7 +907,6 @@ $("medStatus").addEventListener("change", async e => {
       ].join("\n")
     });
 
-    // 기존 복용 기록과 변경 이력은 삭제하지 않는다.
     await removeDoc(C.meds, id);
     await refreshData();
 
@@ -815,7 +921,6 @@ $("medStatus").addEventListener("change", async e => {
   } catch (err) {
     console.error(err);
 
-    // 삭제 이력 저장 후 실제 삭제가 실패했을 수도 있으므로 데이터를 다시 읽는다.
     await refreshData().catch(console.error);
     renderMedicationSelector();
 
@@ -836,7 +941,7 @@ $("medStatus").addEventListener("change", async e => {
   }
 });
 
-// 약물 등록 및 수정 시 변경 이력을 함께 저장한다.
+// 약물 등록, 기존 약물 수정, 약물 변경 이력 수정
 
 $("medicationForm").addEventListener("submit", async e => {
   e.preventDefault();
@@ -851,9 +956,6 @@ $("medicationForm").addEventListener("submit", async e => {
     }
 
     const editingId = f.elements.id.value;
-    const existing = editingId
-      ? cache.meds.find(m => m.id === editingId)
-      : null;
 
     const data = {
       name: f.elements.name.value.trim(),
@@ -866,8 +968,70 @@ $("medicationForm").addEventListener("submit", async e => {
       throw new Error("약물명과 시작 날짜를 입력해 주세요.");
     }
 
-    const id = editingId || newId();
     const now = localDate();
+
+    // 기존 변경 이력을 수정하는 모드
+    if (editingChangeId) {
+      const original = cache.changes.find(r => r.id === editingChangeId);
+
+      if (!original) {
+        throw new Error("수정할 변경 이력을 찾을 수 없어요. 다시 불러와 주세요.");
+      }
+
+      const latest = latestChangeForMedication(original.medicationId);
+
+      if (!latest || latest.id !== original.id) {
+        throw new Error("최신 이력만 수정할 수 있어요. 목록을 새로고침해 주세요.");
+      }
+
+      const medicationId = original.medicationId || editingId || newId();
+
+      // 삭제 이력을 수정하는 경우 약물을 다시 등록한 상태로 반영한다.
+      const updatedAction = original.action === "삭제"
+        ? "정보 수정"
+        : (original.action || "정보 수정");
+
+      await saveDoc(C.changes, original.id, {
+        ...original,
+        date: original.date || now,
+        medicationId,
+        medicationName: data.name,
+        action: updatedAction,
+        dose: data.dose,
+        startDate: data.startDate,
+        active: data.active,
+        note: [
+          "변경 이력 수정",
+          `약물명: ${data.name}`,
+          `용량·복용법: ${data.dose || "미입력"}`,
+          `시작 날짜: ${formatDate(data.startDate)}`,
+          `상태: ${data.active ? "복용 중" : "복용 중단"}`
+        ].join("\n"),
+        createdAt: original.createdAt
+      });
+
+      // 수정한 이력의 내용으로 현재 약물 정보를 갱신한다.
+      await saveDoc(C.meds, medicationId, data);
+
+      await refreshData();
+
+      resetMedicationForm(false);
+      renderMedicationSelector();
+      await renderMedication();
+
+      showMessage(
+        "medicationMessage",
+        "기존 변경 이력을 수정하고 현재 약물 정보도 갱신했어요."
+      );
+
+      return;
+    }
+
+    const existing = editingId
+      ? cache.meds.find(m => m.id === editingId)
+      : null;
+
+    const id = editingId || newId();
 
     if (!existing) {
       await saveDoc(C.meds, id, data);
@@ -971,19 +1135,77 @@ $("medicationForm").addEventListener("submit", async e => {
 
 // 복용 체크
 
+function ensureMedicationLogCancelButton() {
+  let cancel = $("cancelMedicationLogEdit");
+  if (cancel) return cancel;
+
+  const form = $("medicationLogForm");
+  cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.id = "cancelMedicationLogEdit";
+  cancel.textContent = "수정 취소";
+  cancel.classList.add("hidden");
+
+  const submit = form.querySelector('[type="submit"]');
+  submit.insertAdjacentElement("afterend", cancel);
+
+  cancel.addEventListener("click", () => {
+    resetMedicationLogEdit();
+  });
+
+  return cancel;
+}
+
+function resetMedicationLogEdit() {
+  editingLogDate = "";
+
+  const dateInput = $("medLogDate");
+  dateInput.disabled = false;
+  dateInput.value = localDate();
+
+  $("medLogNote").value = "";
+
+  const cancel = ensureMedicationLogCancelButton();
+  cancel.classList.add("hidden");
+
+  const submit = $("medicationLogForm").querySelector('[type="submit"]');
+  submit.textContent = "복용 여부 저장";
+
+  renderMedicationChecks();
+  showMessage("medicationLogMessage", "");
+}
+
 function renderMedicationChecks() {
   const box = $("medicationChecks");
   box.innerHTML = "";
 
-  const meds = activeMeds();
+  const date = $("medLogDate").value || localDate();
+  const logs = cache.logs.filter(l => l.date === date);
+
+  // 현재 복용 중인 약물에 더해 해당 날짜에 기록된 과거 약물도 표시한다.
+  const medsById = new Map();
+
+  activeMeds().forEach(m => medsById.set(m.id, m));
+
+  logs.forEach(log => {
+    if (!medsById.has(log.medicationId)) {
+      medsById.set(log.medicationId, {
+        id: log.medicationId,
+        name: log.medicationName || "삭제된 약물",
+        dose: log.dose || "",
+        active: false
+      });
+    }
+  });
+
+  const meds = [...medsById.values()].sort(
+    (a, b) => (a.name || "").localeCompare(b.name || "", "ko")
+  );
 
   if (!meds.length) {
     showEmpty("medicationChecks", "현재 복용 중인 약물이 없어요.");
     return;
   }
-
-  const date = $("medLogDate").value || localDate();
-  const logs = cache.logs.filter(l => l.date === date);
 
   meds.forEach(m => {
     const log = logs.find(l => l.medicationId === m.id);
@@ -1012,14 +1234,69 @@ function renderMedicationChecks() {
 }
 
 $("medLogDate").addEventListener("change", () => {
+  // 수정 중 날짜를 바꾸면 일반 조회 상태로 전환한다.
+  if (editingLogDate) {
+    editingLogDate = "";
+    $("medLogDate").disabled = false;
+
+    const cancel = ensureMedicationLogCancelButton();
+    cancel.classList.add("hidden");
+
+    $("medicationLogForm").querySelector('[type="submit"]').textContent =
+      "복용 여부 저장";
+
+    $("medLogNote").value = "";
+  }
+
   renderMedicationChecks();
   showMessage("medicationLogMessage", "");
 });
 
+// 해당 날짜의 복용 기록을 위쪽 폼으로 불러오기
+
+function startMedicationLogEdit(date) {
+  const dayLogs = cache.logs.filter(r => r.date === date);
+
+  if (!dayLogs.length) {
+    alert("수정할 복용 기록이 없어요.");
+    return;
+  }
+
+  editingLogDate = date;
+
+  $("medLogDate").value = date;
+  $("medLogDate").disabled = true;
+
+  // 날짜에 저장된 공통 메모를 불러온다.
+  $("medLogNote").value = dayLogs.find(r => r.note)?.note || "";
+
+  const cancel = ensureMedicationLogCancelButton();
+  cancel.classList.remove("hidden");
+
+  $("medicationLogForm").querySelector('[type="submit"]').textContent =
+    "수정사항 저장";
+
+  renderMedicationChecks();
+
+  showMessage(
+    "medicationLogMessage",
+    `${formatDate(date)} 복용 기록을 수정 중입니다. 저장하면 기존 기록을 덮어씁니다.`
+  );
+
+  $("medicationLogForm").scrollIntoView({
+    behavior: "smooth",
+    block: "center"
+  });
+}
+
+$("medLogDate").value = today;
+ensureMedicationLogCancelButton();
+
 $("medicationLogForm").addEventListener("submit", async e => {
   e.preventDefault();
 
-  const btn = e.currentTarget.querySelector('[type="submit"]');
+  const form = e.currentTarget;
+  const btn = form.querySelector('[type="submit"]');
   btn.disabled = true;
 
   try {
@@ -1036,24 +1313,44 @@ $("medicationLogForm").addEventListener("submit", async e => {
     }
 
     const note = $("medLogNote").value.trim();
+    const existingDayLogs = cache.logs.filter(r => r.date === date);
 
     for (const cb of checks) {
-      const med = cache.meds.find(m => m.id === cb.dataset.medId);
-      const id = `${date}_${cb.dataset.medId}`;
+      const medicationId = cb.dataset.medId;
+      const med = cache.meds.find(m => m.id === medicationId);
+      const existingLog = existingDayLogs.find(
+        r => r.medicationId === medicationId
+      );
+
+      // 기존 문서 ID를 유지해 덮어쓴다.
+      const id = existingLog?.id || `${date}_${medicationId}`;
 
       await saveDoc(C.logs, id, {
         date,
-        medicationId: cb.dataset.medId,
-        medicationName: med?.name || "삭제된 약물",
-        dose: med?.dose || "",
+        medicationId,
+        medicationName: med?.name || existingLog?.medicationName || "삭제된 약물",
+        dose: med?.dose || existingLog?.dose || "",
         taken: cb.checked,
-        note
+        note,
+        ...(existingLog?.createdAt
+          ? { createdAt: existingLog.createdAt }
+          : {})
       });
     }
 
     await refreshData();
 
-    showMessage("medicationLogMessage", "복용 여부를 저장했어요.");
+    editingLogDate = "";
+    $("medLogDate").disabled = false;
+    $("medLogDate").value = localDate();
+    $("medLogNote").value = "";
+
+    ensureMedicationLogCancelButton().classList.add("hidden");
+    btn.textContent = "복용 여부 저장";
+
+    renderMedicationChecks();
+
+    showMessage("medicationLogMessage", "복용 기록을 저장했어요.");
     await renderMedication();
   } catch (err) {
     console.error(err);
@@ -1068,26 +1365,17 @@ $("medicationLogForm").addEventListener("submit", async e => {
 });
 
 // 약물 변경 이력
-// 월 선택은 약물 변경 이력과 복용 기록 조회에 공통 적용된다.
+// 약물별 최신 이력만 수정·삭제할 수 있다.
 
 async function renderMedicationChanges() {
   const box = $("medicationChanges");
   box.innerHTML = "";
 
-const changes = cache.changes
-  .filter(r =>
-    (r.date || "").startsWith(months.medicationLogs)
-  )
-  .sort((a, b) => {
-    const timeA = a.createdAt || a.updatedAt || "";
-    const timeB = b.createdAt || b.updatedAt || "";
-
-    if (timeA !== timeB) {
-      return timeB.localeCompare(timeA);
-    }
-
-    return (b.id || "").localeCompare(a.id || "");
-  });
+  const changes = newestChangesFirst(
+    cache.changes.filter(r =>
+      (r.date || "").startsWith(months.medicationLogs)
+    )
+  );
 
   if (!changes.length) {
     showEmpty("medicationChanges", "선택한 달에 약물 변경 이력이 없어요.");
@@ -1101,14 +1389,32 @@ const changes = cache.changes
       r.dose ? `용량·복용법: ${r.dose}` : "용량·복용법 미입력"
     );
 
+    if (r.startDate) {
+      details.push(`시작 날짜: ${formatDate(r.startDate)}`);
+    }
+
     if (r.action === "삭제") {
       details.push(
         `삭제 당시 상태: ${r.active === false ? "복용 중단" : "복용 중"}`
       );
+    }
 
-      if (r.startDate) {
-        details.push(`시작 날짜: ${formatDate(r.startDate)}`);
-      }
+    const latest = latestChangeForMedication(r.medicationId);
+    const isLatest = Boolean(latest && latest.id === r.id);
+
+    const actions = [];
+
+    if (isLatest) {
+      actions.push({
+        label: "수정",
+        onClick: () => startMedicationChangeEdit(r)
+      });
+
+      actions.push({
+        label: "삭제",
+        danger: true,
+        onClick: () => deleteMedicationChange(r)
+      });
     }
 
     box.append(
@@ -1118,20 +1424,44 @@ const changes = cache.changes
           `${r.medicationName || "약물"} · ${r.action || "변경"}`,
         meta: details.join(" · "),
         context: r.note,
-        actions: [
-          {
-            label: "삭제",
-            danger: true,
-            onClick: () => deleteAndRefresh(C.changes, r.id)
-          }
-        ]
+        actions
       })
     );
   });
 }
 
 // 복용 기록 조회
-// 선택한 월에 해당하는 복용 기록만 표시한다.
+// 모든 날짜의 기록에 수정·삭제 버튼을 표시한다.
+
+async function deleteMedicationLogDay(date) {
+  const dayLogs = cache.logs.filter(r => r.date === date);
+
+  if (!dayLogs.length) {
+    alert("삭제할 복용 기록이 없어요.");
+    return;
+  }
+
+  if (!confirm(`${formatDate(date)} 복용 기록을 모두 삭제할까요?`)) {
+    return;
+  }
+
+  try {
+    for (const r of dayLogs) {
+      await removeDoc(C.logs, r.id);
+    }
+
+    await refreshData();
+
+    if (editingLogDate === date) {
+      resetMedicationLogEdit();
+    }
+
+    await renderMedication();
+  } catch (err) {
+    console.error(err);
+    alert("복용 기록을 삭제하지 못했어요.");
+  }
+}
 
 async function renderMedicationLogHistory() {
   const logBox = $("medicationLogHistory");
@@ -1162,11 +1492,28 @@ async function renderMedicationLogHistory() {
     const takenCount = dayLogs.filter(r => r.taken).length;
     const notTakenCount = dayLogs.filter(r => !r.taken).length;
 
-    const details = dayLogs
-      .map(r =>
-        `${r.medicationName || "약물"}: ${r.taken ? "복용" : "미복용"} (${r.dose || "용량 미입력"})`
-      )
-      .join("\n");
+ const details = [...dayLogs]
+  .sort((a, b) => {
+    const meds = activeMeds();
+    const aIndex = meds.findIndex(m => m.id === a.medicationId);
+    const bIndex = meds.findIndex(m => m.id === b.medicationId);
+
+    // 현재 복용 목록에 없는 과거 약물은 뒤로 배치
+    if (aIndex === -1 && bIndex !== -1) return 1;
+    if (aIndex !== -1 && bIndex === -1) return -1;
+    if (aIndex === -1 && bIndex === -1) {
+      return (a.medicationName || "").localeCompare(
+        b.medicationName || "",
+        "ko"
+      );
+    }
+
+    return aIndex - bIndex;
+  })
+  .map(r =>
+    `${r.medicationName || "약물"}: ${r.taken ? "복용" : "미복용"} (${r.dose || "용량 미입력"})`
+  )
+  .join("\n");
 
     const notes = [
       ...new Set(dayLogs.map(r => (r.note || "").trim()).filter(Boolean))
@@ -1179,25 +1526,13 @@ async function renderMedicationLogHistory() {
         context: details + (notes ? `\n메모: ${notes}` : ""),
         actions: [
           {
-            label: "이 날짜 기록 전체 삭제",
+            label: "수정",
+            onClick: () => startMedicationLogEdit(date)
+          },
+          {
+            label: "삭제",
             danger: true,
-            onClick: async () => {
-              if (!confirm(`${formatDate(date)} 복용 기록을 모두 삭제할까요?`)) {
-                return;
-              }
-
-              try {
-                for (const r of dayLogs) {
-                  await removeDoc(C.logs, r.id);
-                }
-
-                await refreshData();
-                await renderMedication();
-              } catch (err) {
-                console.error(err);
-                alert("복용 기록을 삭제하지 못했어요.");
-              }
-            }
+            onClick: () => deleteMedicationLogDay(date)
           }
         ]
       })
@@ -1232,11 +1567,37 @@ async function renderDashboard() {
   $("dashWeight").textContent = latestWeight
     ? num(latestWeight.weight).toFixed(1)
     : "-";
-
   const todaysLogs = cache.logs.filter(r => r.date === today);
 
+  // 날짜별 복용 체크 화면과 동일한 약물 목록 구성
+  const todayMeds = new Map();
+
+  activeMeds().forEach(m => todayMeds.set(m.id, m));
+
+  todaysLogs.forEach(log => {
+    if (!todayMeds.has(log.medicationId)) {
+      todayMeds.set(log.medicationId, {
+        id: log.medicationId,
+        name: log.medicationName || "삭제된 약물",
+        dose: log.dose || "",
+        active: false
+      });
+    }
+  });
+
+  // 실제 복용으로 기록된 약물만 계산
+  const takenIds = new Set(
+    todaysLogs
+      .filter(log => log.taken === true)
+      .map(log => log.medicationId)
+  );
+
+  const takenCount = [...todayMeds.keys()]
+    .filter(id => takenIds.has(id))
+    .length;
+
   $("dashMeds").textContent =
-    todaysLogs.filter(r => r.taken).length;
+    `${takenCount}/${todayMeds.size}`;
 }
 
 // 날짜 기본값 및 첫 화면
@@ -1248,11 +1609,12 @@ for (const id of [
   "medStartDate",
   "medLogDate"
 ]) {
-  $(id).value = today;
+  if ($(id)) $(id).value = today;
 }
 
 try {
   await refreshData();
+  ensureMedicationLogCancelButton();
   await renderMedication();
   await renderDashboard();
 } catch (error) {
