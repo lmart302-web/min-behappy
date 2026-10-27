@@ -1597,7 +1597,7 @@ async function renderDashboard() {
     .length;
 
   $("dashMeds").textContent =
-    `${takenCount}/${todayMeds.size}`;
+    `${takenCount} / ${todayMeds.size}`;
 }
 
 // 날짜 기본값 및 첫 화면

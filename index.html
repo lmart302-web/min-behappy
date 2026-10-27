@@ -19,10 +19,10 @@
 
     <nav class="tabs" aria-label="주요 메뉴">
       <button class="tab active" data-view="dashboard" type="button">대시보드</button>
-      <button class="tab" data-view="behavior" type="button">도전적 행동</button>
-      <button class="tab" data-view="crying" type="button">울음 기록</button>
-      <button class="tab" data-view="weight" type="button">체중 관리</button>
-      <button class="tab" data-view="medication" type="button">약물 관리</button>
+      <button class="tab" data-view="behavior" type="button">행동</button>
+      <button class="tab" data-view="crying" type="button">울음</button>
+      <button class="tab" data-view="weight" type="button">체중</button>
+      <button class="tab" data-view="medication" type="button">약물</button>
     </nav>
 
     <section id="dashboardView" class="view">
@@ -35,7 +35,7 @@
         <article class="summary-card summary-behavior">
           <div class="summary-card-icon">⚡</div>
           <div class="summary-card-content">
-            <span>도전적 행동</span>
+            <span>어려운 행동</span>
             <div class="summary-card-value">
               <strong id="dashBehavior">-</strong><small>회</small>
             </div>
@@ -79,7 +79,7 @@
           <span class="hint">선택한 메뉴에서 바로 입력할 수 있어요.</span>
         </div>
         <div class="quick-actions">
-          <button class="button button-primary" data-go="behavior" type="button">＋ 도전적 행동</button>
+          <button class="button button-primary" data-go="behavior" type="button">＋ 어려운 행동</button>
           <button class="button button-primary" data-go="crying" type="button">＋ 울음 기록</button>
           <button class="button button-secondary" data-go="weight" type="button">＋ 체중 기록</button>
           <button class="button button-secondary" data-go="medication" type="button">약물 복용 체크</button>
@@ -90,7 +90,7 @@
     <section id="behaviorView" class="view hidden">
       <div class="panel">
         <div class="section-heading">
-          <h2>도전적 행동 기록</h2>
+          <h2>어려운 행동 기록</h2>
           <span class="hint">발생 건별 기록</span>
         </div>
 
