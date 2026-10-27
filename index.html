@@ -27,12 +27,56 @@
 
     <section id="dashboardView" class="view">
       <div class="section-heading"><h2>오늘의 요약</h2><span class="hint" id="todayLabel"></span></div>
-      <div class="summary-grid">
-        <article class="summary-card"><span>도전적 행동</span><strong id="dashBehavior">-</strong><small>회</small></article>
-        <article class="summary-card"><span>울음</span><strong id="dashCrying">-</strong><small>회</small></article>
-        <article class="summary-card"><span>최근 체중</span><strong id="dashWeight">-</strong><small>kg</small></article>
-        <article class="summary-card"><span>복용 체크</span><strong id="dashMeds">-</strong><small>개</small></article>
+      
+<div class="summary-grid">
+  <article class="summary-card summary-behavior">
+    <div class="summary-card-icon">⚡</div>
+    <div class="summary-card-content">
+      <span>도전적 행동</span>
+      <div class="summary-card-value">
+        <strong id="dashBehavior">-</strong>
+        <small>회</small>
       </div>
+    </div>
+  </article>
+
+  <article class="summary-card summary-crying">
+    <div class="summary-card-icon">☁️</div>
+    <div class="summary-card-content">
+      <span>울음</span>
+      <div class="summary-card-value">
+        <strong id="dashCrying">-</strong>
+        <small>회</small>
+      </div>
+    </div>
+  </article>
+
+  <article class="summary-card summary-weight">
+    <div class="summary-card-icon">⚖️</div>
+    <div class="summary-card-content">
+      <span>최근 체중</span>
+      <div class="summary-card-value">
+        <strong id="dashWeight">-</strong>
+        <small>kg</small>
+      </div>
+    </div>
+  </article>
+
+  <article class="summary-card summary-meds">
+    <div class="summary-card-icon">💊</div>
+    <div class="summary-card-content">
+      <span>복용 체크</span>
+      <div class="summary-card-value">
+        <strong id="dashMeds">-</strong>
+        <small>개</small>
+      </div>
+    </div>
+  </article>
+</div>
+
+
+      
+
       <div class="panel"><div class="section-heading"><h2>빠른 기록</h2><span class="hint">선택한 메뉴에서 바로 입력할 수 있어요.</span></div>
         <div class="quick-actions">
           <button class="button button-primary" data-go="behavior" type="button">＋ 도전적 행동</button>
