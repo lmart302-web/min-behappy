@@ -1175,6 +1175,33 @@ function resetMedicationLogEdit() {
   showMessage("medicationLogMessage", "");
 }
 
+
+/* 약물 복용 시간 순서: 아침 → 점심 → 저녁 → 기타 */
+function medicationTimeOrder(dose) {
+  const text = dose || "";
+
+  if (text.includes("아침")) return 1;
+  if (text.includes("점심")) return 2;
+  if (text.includes("저녁")) return 3;
+
+  return 4;
+}
+
+/* 복용법을 기준으로 약물 정렬 */
+function sortMedicationsByTime(medications) {
+  return [...medications].sort((a, b) => {
+    const timeDiff =
+      medicationTimeOrder(a.dose) - medicationTimeOrder(b.dose);
+
+    if (timeDiff !== 0) return timeDiff;
+
+    return (a.name || "").localeCompare(b.name || "", "ko");
+  });
+}
+
+
+
+
 function renderMedicationChecks() {
   const box = $("medicationChecks");
   box.innerHTML = "";
@@ -1198,9 +1225,7 @@ function renderMedicationChecks() {
     }
   });
 
-  const meds = [...medsById.values()].sort(
-    (a, b) => (a.name || "").localeCompare(b.name || "", "ko")
-  );
+ const meds = sortMedicationsByTime([...medsById.values()]);
 
   if (!meds.length) {
     showEmpty("medicationChecks", "현재 복용 중인 약물이 없어요.");
@@ -1219,17 +1244,19 @@ function renderMedicationChecks() {
     cb.dataset.medId = m.id;
     cb.checked = Boolean(log?.taken);
 
-    const label = document.createElement("label");
-    label.htmlFor = cb.id;
-    label.textContent = m.name;
+    
+const label = document.createElement("label");
+label.htmlFor = cb.id;
+label.className = "med-check-name";
+label.textContent = m.name;
 
-    const dose = document.createElement("span");
-    dose.className = "dose";
-    dose.textContent = m.dose || "용량 미입력";
+const dose = document.createElement("span");
+dose.className = "dose";
+dose.textContent = m.dose || "용량 미입력";
 
-    label.append(document.createElement("br"), dose);
-    row.append(cb, label);
-    box.append(row);
+row.append(cb, label, dose);
+box.append(row);
+
   });
 }
 
@@ -1492,28 +1519,28 @@ async function renderMedicationLogHistory() {
     const takenCount = dayLogs.filter(r => r.taken).length;
     const notTakenCount = dayLogs.filter(r => !r.taken).length;
 
- const details = [...dayLogs]
-  .sort((a, b) => {
+    // 현재 약물 목록의 정렬 기준을 복용 기록에도 동일하게 적용
     const meds = activeMeds();
-    const aIndex = meds.findIndex(m => m.id === a.medicationId);
-    const bIndex = meds.findIndex(m => m.id === b.medicationId);
 
-    // 현재 복용 목록에 없는 과거 약물은 뒤로 배치
-    if (aIndex === -1 && bIndex !== -1) return 1;
-    if (aIndex !== -1 && bIndex === -1) return -1;
-    if (aIndex === -1 && bIndex === -1) {
-      return (a.medicationName || "").localeCompare(
-        b.medicationName || "",
-        "ko"
-      );
-    }
+    const sortedDayLogs = sortMedicationsByTime(
+      dayLogs.map(r => {
+        const med = meds.find(m => m.id === r.medicationId);
 
-    return aIndex - bIndex;
-  })
-  .map(r =>
-    `${r.medicationName || "약물"}: ${r.taken ? "복용" : "미복용"} (${r.dose || "용량 미입력"})`
-  )
-  .join("\n");
+        return {
+          ...(med || {}),
+          id: r.medicationId,
+          name: r.medicationName || med?.name || "약물",
+          dose: r.dose || med?.dose || "",
+          log: r
+        };
+      })
+    ).map(m => m.log);
+
+    const details = sortedDayLogs
+      .map(r =>
+        `${r.medicationName || "약물"}: ${r.taken ? "복용" : "미복용"} (${r.dose || "용량 미입력"})`
+      )
+      .join("\n");
 
     const notes = [
       ...new Set(dayLogs.map(r => (r.note || "").trim()).filter(Boolean))
