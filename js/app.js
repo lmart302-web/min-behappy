@@ -1394,6 +1394,7 @@ $("medicationLogForm").addEventListener("submit", async e => {
 // 약물 변경 이력
 // 약물별 최신 이력만 수정·삭제할 수 있다.
 
+
 async function renderMedicationChanges() {
   const box = $("medicationChanges");
   box.innerHTML = "";
@@ -1410,22 +1411,6 @@ async function renderMedicationChanges() {
   }
 
   changes.forEach(r => {
-    const details = [];
-
-    details.push(
-      r.dose ? `용량·복용법: ${r.dose}` : "용량·복용법 미입력"
-    );
-
-    if (r.startDate) {
-      details.push(`시작 날짜: ${formatDate(r.startDate)}`);
-    }
-
-    if (r.action === "삭제") {
-      details.push(
-        `삭제 당시 상태: ${r.active === false ? "복용 중단" : "복용 중"}`
-      );
-    }
-
     const latest = latestChangeForMedication(r.medicationId);
     const isLatest = Boolean(latest && latest.id === r.id);
 
@@ -1444,18 +1429,31 @@ async function renderMedicationChanges() {
       });
     }
 
+    // 첫째 줄: 날짜 · 변경 유형
+    // 둘째 줄: 약물명
+    // 셋째 줄: 용량·복용법 · 시작 날짜
+    // 넷째 줄: 상태
+    const statusText = r.action === "삭제"
+      ? `삭제 당시 상태: ${r.active === false ? "복용 중단" : "복용 중"}`
+      : `상태: ${r.active === false ? "복용 중단" : "복용 중"}`;
+
+    const details = [
+      r.dose ? `용량·복용법: ${r.dose}` : "용량·복용법 미입력",
+      `시작 날짜: ${formatDate(r.startDate)}`,
+      statusText
+    ].join("\n");
+
     box.append(
       itemCard({
-        title:
-          `${formatDate(r.date)} · ` +
-          `${r.medicationName || "약물"} · ${r.action || "변경"}`,
-        meta: details.join(" · "),
-        context: r.note,
+        title: `${formatDate(r.date)} · ${r.action || "변경"}`,
+        meta: r.medicationName || "약물",
+        context: details,
         actions
       })
     );
   });
 }
+
 
 // 복용 기록 조회
 // 모든 날짜의 기록에 수정·삭제 버튼을 표시한다.
