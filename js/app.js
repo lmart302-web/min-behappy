@@ -1536,34 +1536,62 @@ async function renderMedicationLogHistory() {
       })
     ).map(m => m.log);
 
-    const details = sortedDayLogs
-      .map(r =>
-        `${r.medicationName || "약물"}: ${r.taken ? "복용" : "미복용"} (${r.dose || "용량 미입력"})`
-      )
-      .join("\n");
+    const details = sortedDayLogs;
 
     const notes = [
       ...new Set(dayLogs.map(r => (r.note || "").trim()).filter(Boolean))
     ].join("\n");
 
-    logBox.append(
-      itemCard({
-        title: formatDate(date),
-        meta: `${takenCount}개 복용 · ${notTakenCount}개 미복용`,
-        context: details + (notes ? `\n메모: ${notes}` : ""),
-        actions: [
-          {
-            label: "수정",
-            onClick: () => startMedicationLogEdit(date)
-          },
-          {
-            label: "삭제",
-            danger: true,
-            onClick: () => deleteMedicationLogDay(date)
-          }
-        ]
-      })
-    );
+    const card = itemCard({
+  title: formatDate(date),
+  meta: `${takenCount}개 복용 · ${notTakenCount}개 미복용`,
+  actions: [
+    { label: "수정", onClick: () => startMedicationLogEdit(date) },
+    { label: "삭제", danger: true, onClick: () => deleteMedicationLogDay(date) }
+  ]
+});
+
+const detailBox = document.createElement("div");
+detailBox.className = "medication-log-details";
+
+details.forEach(r => {
+  const row = document.createElement("div");
+  row.className = "medication-log-detail-row";
+
+  const name = document.createElement("span");
+  name.className = "medication-log-name";
+  name.textContent = r.medicationName || "약물";
+
+  const info = document.createElement("span");
+  info.className = "medication-log-info";
+  info.textContent =
+    `${r.taken ? "복용" : "미복용"} (${r.dose || "용량 미입력"})`;
+
+  row.append(name, info);
+  detailBox.appendChild(row);
+});
+
+const actions = card.querySelector(".record-actions");
+
+if (actions) {
+  card.insertBefore(detailBox, actions);
+} else {
+  card.appendChild(detailBox);
+}
+
+if (notes) {
+  const noteBox = document.createElement("div");
+  noteBox.className = "medication-log-note";
+  noteBox.textContent = `메모: ${notes}`;
+
+  if (actions) {
+    card.insertBefore(noteBox, actions);
+  } else {
+    card.appendChild(noteBox);
+  }
+}
+
+logBox.appendChild(card);;
   });
 }
 

@@ -109,4 +109,38 @@
   }
 }
 
+/* 복용기록 조회: 약물명은 왼쪽, 복용 정보는 오른쪽 */
+#medicationLogHistory .medication-log-details {
+  margin-top: 10px;
+}
+
+#medicationLogHistory .medication-log-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 5px 0;
+}
+
+#medicationLogHistory .medication-log-name {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+#medicationLogHistory .medication-log-info {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+#medicationLogHistory .medication-log-note {
+  margin-top: 6px;
+  text-align: right;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
 
