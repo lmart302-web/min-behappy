@@ -610,13 +610,17 @@ function renderWeightChart(records) {
 async function renderWeight() {
   $("weightMonth").textContent = monthLabel(months.weight);
 
-  const rs = monthRecords("weight").sort((a, b) => a.date.localeCompare(b.date));
+  const rs = monthRecords("weight").sort((a, b) =>
+    a.date.localeCompare(b.date)
+  );
 
   $("weightFirst").textContent = rs.length
-    ? `${num(rs[0].weight).toFixed(1)}kg` : "-";
+    ? `${num(rs[0].weight).toFixed(1)}kg`
+    : "-";
 
   $("weightLast").textContent = rs.length
-    ? `${num(rs[rs.length - 1].weight).toFixed(1)}kg` : "-";
+    ? `${num(rs[rs.length - 1].weight).toFixed(1)}kg`
+    : "-";
 
   const change = rs.length > 1
     ? num(rs[rs.length - 1].weight) - num(rs[0].weight)
@@ -639,32 +643,64 @@ async function renderWeight() {
   }
 
   all.forEach(r => {
-    list.append(
-      itemCard({
-        title: `${formatDate(r.date)} · ${num(r.weight).toFixed(1)}kg`,
-        meta: "체중 측정",
-        actions: [
-          {
-            label: "수정",
-            onClick: () => {
-              const f = $("weightForm");
+    const card = document.createElement("article");
+    card.className = "record-item";
 
-              f.elements.id.value = r.id;
-              f.elements.date.value = r.date;
-              f.elements.weight.value = r.weight;
-              $("cancelWeightEdit").classList.remove("hidden");
+    card.style.display = "flex";
+    card.style.flexDirection = "row";
+    card.style.alignItems = "center";
+    card.style.justifyContent = "space-between";
+    card.style.gap = "8px";
 
-              f.scrollIntoView({ behavior: "smooth", block: "center" });
-            }
-          },
-          {
-            label: "삭제",
-            danger: true,
-            onClick: () => deleteAndRefresh(C.weight, r.id)
-          }
-        ]
-      })
-    );
+    const title = document.createElement("div");
+    title.className = "record-title";
+    title.textContent =
+      `${formatDate(r.date)} · ${num(r.weight).toFixed(1)}kg`;
+
+    title.style.flex = "1";
+    title.style.minWidth = "0";
+    title.style.margin = "0";
+
+    const actions = document.createElement("div");
+    actions.className = "record-actions";
+
+    actions.style.display = "flex";
+    actions.style.flexDirection = "row";
+    actions.style.flexShrink = "0";
+    actions.style.gap = "6px";
+    actions.style.margin = "0";
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.textContent = "수정";
+
+    editBtn.addEventListener("click", () => {
+      const f = $("weightForm");
+
+      f.elements.id.value = r.id;
+      f.elements.date.value = r.date;
+      f.elements.weight.value = r.weight;
+
+      $("cancelWeightEdit").classList.remove("hidden");
+
+      f.scrollIntoView({
+        behavior: "smooth",
+        block: "center"
+      });
+    });
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.textContent = "삭제";
+    deleteBtn.className = "delete";
+
+    deleteBtn.addEventListener("click", () => {
+      deleteAndRefresh(C.weight, r.id);
+    });
+
+    actions.append(editBtn, deleteBtn);
+    card.append(title, actions);
+    list.append(card);
   });
 }
 
