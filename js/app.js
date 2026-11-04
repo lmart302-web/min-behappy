@@ -1526,7 +1526,8 @@ async function deleteMedicationLogDay(date) {
 
 // 복용 기록 조회 - 월간 표 형태
 
-// 복용 기록 조회 - 월간 표 형태
+
+
 async function renderMedicationLogHistory() {
   const logBox = $("medicationLogHistory");
   logBox.innerHTML = "";
@@ -1620,9 +1621,8 @@ async function renderMedicationLogHistory() {
   // 날짜별 제목
   dates.forEach(date => {
     const th = document.createElement("th");
-    const isToday = date === todayDate;
 
-    th.style.background = isToday ? "#e8f5e9" : "#f3f4f6";
+    th.style.background = "#f3f4f6";
     th.style.minWidth = "46px";
     th.style.padding = "6px 3px";
     th.style.textAlign = "center";
@@ -1630,40 +1630,23 @@ async function renderMedicationLogHistory() {
     th.style.borderRight = "1px solid #eee";
     th.style.verticalAlign = "middle";
 
-    // 오늘 날짜 테두리
-    if (isToday) {
-      th.style.borderLeft = "2px solid #4caf50";
-      th.style.borderRight = "2px solid #4caf50";
-      th.style.borderTop = "2px solid #4caf50";
-    }
-
     const day = Number(date.slice(-2));
     const weekday = ["일", "월", "화", "수", "목", "금", "토"][
       new Date(year, monthNumber - 1, day).getDay()
     ];
 
+    // 날짜 숫자
     const dateText = document.createElement("div");
     dateText.textContent = `${day}일`;
     dateText.style.fontWeight = "700";
 
+    // 요일
     const weekdayText = document.createElement("div");
     weekdayText.textContent = weekday;
     weekdayText.style.fontSize = "11px";
     weekdayText.style.color = "#777";
 
     th.append(dateText, weekdayText);
-
-    // 오늘 표시
-    if (isToday) {
-      const todayLabel = document.createElement("div");
-      todayLabel.textContent = "오늘";
-      todayLabel.style.fontSize = "10px";
-      todayLabel.style.fontWeight = "700";
-      todayLabel.style.color = "#2e7d32";
-      todayLabel.style.marginTop = "3px";
-
-      th.appendChild(todayLabel);
-    }
 
     // 해당 날짜 기록이 있을 때만 수정 버튼 표시
     const dayLogs = logs.filter(r => r.date === date);
@@ -1692,7 +1675,7 @@ async function renderMedicationLogHistory() {
   // 약물별 행 생성
   const tbody = document.createElement("tbody");
 
-  medications.forEach(med => {
+  medications.forEach((med, medIndex) => {
     const tr = document.createElement("tr");
 
     // 약물명 셀
@@ -1718,7 +1701,6 @@ async function renderMedicationLogHistory() {
     // 날짜별 복용 여부
     dates.forEach(date => {
       const td = document.createElement("td");
-      const isToday = date === todayDate;
 
       td.style.textAlign = "center";
       td.style.padding = "9px 3px";
@@ -1726,14 +1708,23 @@ async function renderMedicationLogHistory() {
       td.style.borderBottom = "1px solid #eee";
       td.style.borderRight = "1px solid #eee";
 
-      // 오늘 날짜 열 강조
-      if (isToday) {
-        td.style.background = "#f1f8f2";
+      const log = logMap.get(`${date}_${med.id}`);
+
+      // 오늘 날짜의 복용 체크 칸 전체를 초록색 테두리로 강조
+      if (date === todayDate) {
         td.style.borderLeft = "2px solid #4caf50";
         td.style.borderRight = "2px solid #4caf50";
-      }
 
-      const log = logMap.get(`${date}_${med.id}`);
+        // 첫 번째 약물 칸 위쪽 테두리
+        if (medIndex === 0) {
+          td.style.borderTop = "2px solid #4caf50";
+        }
+
+        // 마지막 약물 칸 아래쪽 테두리
+        if (medIndex === medications.length - 1) {
+          td.style.borderBottom = "2px solid #4caf50";
+        }
+      }
 
       if (log) {
         const mark = document.createElement("span");
@@ -1787,6 +1778,8 @@ async function renderMedicationLogHistory() {
     logBox.appendChild(noteBox);
   });
 }
+
+
 
 
 async function renderMedication() {
