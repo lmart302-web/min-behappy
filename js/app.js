@@ -1619,9 +1619,17 @@ async function renderMedicationLogHistory() {
   headerRow.appendChild(nameHeader);
 
   // 날짜별 제목
-  dates.forEach(date => {
+// 날짜별 제목
+let todayHeader = null;
+
+dates.forEach(date => {
+
     const th = document.createElement("th");
 
+    // 오늘 날짜의 제목 요소 저장
+    if (date === todayDate) {
+        todayHeader = th;
+    }
     th.style.background = "#f3f4f6";
     th.style.minWidth = "46px";
     th.style.padding = "6px 3px";
@@ -1753,8 +1761,24 @@ async function renderMedicationLogHistory() {
   });
 
   table.appendChild(tbody);
-  wrapper.appendChild(table);
-  logBox.appendChild(wrapper);
+wrapper.appendChild(table);
+logBox.appendChild(wrapper);
+
+// 모바일에서는 오늘 날짜 열이 처음 보이도록 자동 스크롤
+if (
+    todayHeader &&
+    window.matchMedia("(max-width: 768px)").matches
+) {
+    requestAnimationFrame(() => {
+        const scrollPosition =
+            todayHeader.getBoundingClientRect().left -
+            wrapper.getBoundingClientRect().left +
+            wrapper.scrollLeft -
+            nameHeader.getBoundingClientRect().width;
+
+        wrapper.scrollLeft = Math.max(0, scrollPosition);
+    });
+}
 
   // 날짜별 메모 표시
   dates.forEach(date => {
