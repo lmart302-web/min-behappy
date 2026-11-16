@@ -3566,10 +3566,11 @@ editButtons.forEach((button, date) => {
   ) {
     requestAnimationFrame(() => {
       const scrollPosition =
-        todayHeader.getBoundingClientRect().left -
-        wrapper.getBoundingClientRect().left +
-        wrapper.scrollLeft -
-        (firstNameHeader?.getBoundingClientRect().width || 110);
+  todayHeader.getBoundingClientRect().left -
+  wrapper.getBoundingClientRect().left +
+  wrapper.scrollLeft -
+  (firstNameHeader?.getBoundingClientRect().width || 110)
+  - 46;
 
       wrapper.scrollLeft = Math.max(0, scrollPosition);
     });
