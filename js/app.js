@@ -2481,119 +2481,69 @@ function medicationActiveOnDate(medicationId, date) {
 
 
 
+
 function renderMedicationChecks() {
-
   const box = $("medicationChecks");
-
   box.innerHTML = "";
 
-
-
   const date = $("medLogDate").value || localDate();
-
   const logs = cache.logs.filter(l => l.date === date);
 
-
-
-  // 현재 복용 중인 약물에 더해 해당 날짜에 기록된 과거 약물도 표시한다.
-
+  // 선택한 날짜에 복용 중이었던 약물만 표시한다.
   const medsById = new Map();
 
+  cache.meds
+    .filter(m => medicationActiveOnDate(m.id, date))
+    .forEach(m => medsById.set(m.id, m));
 
-
-  activeMeds().forEach(m => medsById.set(m.id, m));
-
-
-
+  // 해당 날짜의 기록 중 약물 목록에 없는 약물도 확인한다.
   logs.forEach(log => {
-
-    if (!medsById.has(log.medicationId)) {
-
+    if (
+      !medsById.has(log.medicationId) &&
+      medicationActiveOnDate(log.medicationId, date)
+    ) {
       medsById.set(log.medicationId, {
-
         id: log.medicationId,
-
         name: log.medicationName || "삭제된 약물",
-
         dose: log.dose || "",
-
         active: false
-
       });
-
     }
-
   });
 
-
-
- const meds = sortMedicationsByTime([...medsById.values()]);
-
-
+  const meds = sortMedicationsByTime([...medsById.values()]);
 
   if (!meds.length) {
-
-    showEmpty("medicationChecks", "현재 복용 중인 약물이 없어요.");
-
+    showEmpty("medicationChecks", "해당 날짜에 복용할 약물이 없어요.");
     return;
-
   }
 
-
-
   meds.forEach(m => {
-
     const log = logs.find(l => l.medicationId === m.id);
 
-
-
     const row = document.createElement("div");
-
     row.className = "med-check";
 
-
-
     const cb = document.createElement("input");
-
     cb.type = "checkbox";
-
     cb.id = `medcheck-${m.id}`;
-
     cb.dataset.medId = m.id;
-
     cb.checked = Boolean(log?.taken);
 
+    const label = document.createElement("label");
+    label.htmlFor = cb.id;
+    label.className = "med-check-name";
+    label.textContent = m.name;
 
+    const dose = document.createElement("span");
+    dose.className = "dose";
+    dose.textContent = m.dose || "용량 미입력";
 
-
-
-const label = document.createElement("label");
-
-label.htmlFor = cb.id;
-
-label.className = "med-check-name";
-
-label.textContent = m.name;
-
-
-
-const dose = document.createElement("span");
-
-dose.className = "dose";
-
-dose.textContent = m.dose || "용량 미입력";
-
-
-
-row.append(cb, label, dose);
-
-box.append(row);
-
-
-
+    row.append(cb, label, dose);
+    box.append(row);
   });
-
 }
+
 
 
 
