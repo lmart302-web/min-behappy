@@ -1539,6 +1539,9 @@ function resetMedicationForm(clearMessage = true) {
   $("medStartDate").value = localDate();
   $("medEffectiveDate").value = $("medStartDate").value;
 
+  $("medEffectiveDateGroup").classList.remove("hidden");
+f.elements.effectiveDate.required = true;
+
   $("medStatus").value = "true";
   $("cancelMedicationEdit").classList.add("hidden");
 
@@ -1644,7 +1647,11 @@ function selectMedicationForEdit(id) {
   f.elements.dose.value = med.dose || "";
 
   f.elements.startDate.value = med.startDate || localDate();
+
   $("medEffectiveDate").value = localDate();
+  $("medEffectiveDateGroup").classList.remove("hidden");
+
+f.elements.effectiveDate.required = true;
 
   f.elements.active.value = med.active === false ? "false" : "true";
 
@@ -1710,8 +1717,9 @@ function startMedicationChangeEdit(change) {
   f.elements.dose.value = change.dose || "";
 
   f.elements.startDate.value = change.startDate || localDate();
-  $("medEffectiveDate").value =
-  change.effectiveDate || change.date || localDate();
+
+$("medEffectiveDateGroup").classList.add("hidden");
+f.elements.effectiveDate.required = false;
 
   f.elements.active.value = change.active === false ? "false" : "true";
 
@@ -2058,8 +2066,12 @@ const data = {
   active: f.elements.active.value === "true"
 };
 
-if (!data.name || !data.startDate || !data.effectiveDate) {
-  throw new Error("약물명, 복용 시작일, 적용 시작일을 입력해 주세요.");
+if (
+  !data.name ||
+  !data.startDate ||
+  (!editingChangeId && !data.effectiveDate)
+) {
+  throw new Error("약물명과 복용 시작일을 입력해 주세요.");
 }
 
 const medicationData = {
@@ -2133,7 +2145,6 @@ await saveDoc(C.changes, original.id, {
   action: updatedAction,
   dose: data.dose,
   startDate: data.startDate,
-  effectiveDate: data.effectiveDate,
   active: data.active,
   note: buildMedicationChangeNote(updatedAction, previous, data),
   createdAt: original.createdAt
@@ -2434,16 +2445,15 @@ function sortMedicationsByTime(medications) {
 
 /* 날짜별 약물 복용 상태 확인 */
 
-function medicationActiveOnDate(medicationId, date) {
+
+/* 선택한 날짜에 적용되는 약물 정보 가져오기 */
+function medicationInfoOnDate(medicationId, date) {
   const medication = cache.meds.find(m => m.id === medicationId);
 
-  // 복용 시작일 이전에는 복용하지 않은 것으로 처리
-  if (medication?.startDate && date < medication.startDate) {
-    return false;
-  }
+  const allHistory = cache.changes
+    .filter(r => r.medicationId === medicationId);
 
-  const history = cache.changes
-    .filter(r => r.medicationId === medicationId)
+  const history = allHistory
     .map(r => ({
       ...r,
       appliedDate:
@@ -2460,14 +2470,51 @@ function medicationActiveOnDate(medicationId, date) {
       return changeTimestamp(a).localeCompare(changeTimestamp(b));
     });
 
-  if (!history.length) return true;
+  // 변경 이력이 아예 없는 기존 약물은 현재 정보를 사용
+  if (!allHistory.length) {
+    if (
+      !medication ||
+      medication.active === false ||
+      (medication.startDate && date < medication.startDate)
+    ) {
+      return null;
+    }
+
+    return medication;
+  }
+
+  // 선택 날짜 이전에 적용된 이력이 없는 약물
+  if (!history.length) return null;
 
   const latest = history[history.length - 1];
 
-  if (latest.action === "삭제") return false;
+  // 삭제 또는 복용 중단 상태
+  if (latest.action === "삭제" || latest.active === false) {
+    return null;
+  }
 
-  return latest.active !== false;
+  // 선택 날짜 당시의 약물 정보 반환
+  return {
+    ...medication,
+    ...latest,
+    id: medicationId,
+    name:
+      latest.medicationName ||
+      latest.name ||
+      medication?.name ||
+      "이름 없는 약물",
+    dose: latest.dose ?? medication?.dose ?? "",
+    active: true
+  };
 }
+
+
+/* 날짜별 약물 복용 상태 확인 */
+function medicationActiveOnDate(medicationId, date) {
+  return Boolean(medicationInfoOnDate(medicationId, date));
+}
+
+
 
 
 
@@ -2489,25 +2536,25 @@ function renderMedicationChecks() {
   const date = $("medLogDate").value || localDate();
   const logs = cache.logs.filter(l => l.date === date);
 
-  // 선택한 날짜에 복용 중이었던 약물만 표시한다.
+  // 선택한 날짜에 실제로 적용되는 약물 정보만 가져온다.
   const medsById = new Map();
 
-  cache.meds
-    .filter(m => medicationActiveOnDate(m.id, date))
-    .forEach(m => medsById.set(m.id, m));
+  cache.meds.forEach(m => {
+    const info = medicationInfoOnDate(m.id, date);
 
-  // 해당 날짜의 기록 중 약물 목록에 없는 약물도 확인한다.
+    if (info) {
+      medsById.set(m.id, info);
+    }
+  });
+
+  // 해당 날짜의 기록에 있는 과거 약물도 확인한다.
   logs.forEach(log => {
-    if (
-      !medsById.has(log.medicationId) &&
-      medicationActiveOnDate(log.medicationId, date)
-    ) {
-      medsById.set(log.medicationId, {
-        id: log.medicationId,
-        name: log.medicationName || "삭제된 약물",
-        dose: log.dose || "",
-        active: false
-      });
+    if (!medsById.has(log.medicationId)) {
+      const info = medicationInfoOnDate(log.medicationId, date);
+
+      if (info) {
+        medsById.set(log.medicationId, info);
+      }
     }
   });
 
@@ -2543,6 +2590,7 @@ function renderMedicationChecks() {
     box.append(row);
   });
 }
+
 
 
 
@@ -2715,7 +2763,7 @@ $("medicationLogForm").addEventListener("submit", async e => {
 
       const medicationId = cb.dataset.medId;
 
-      const med = cache.meds.find(m => m.id === medicationId);
+      const med = medicationInfoOnDate(medicationId, date);
 
       const existingLog = existingDayLogs.find(
 
@@ -2965,9 +3013,7 @@ if (r.action === "등록" && r.startDate) {
   lines.push(`복용 시작일: ${formatDate(r.startDate)}`);
 }
 
-if (r.effectiveDate) {
-  lines.push(`적용 시작일: ${formatDate(r.effectiveDate)}`);
-}
+
 
   return [
     `${formatDate(r.date)} · ${r.action || "변경"}`,
@@ -3068,34 +3114,31 @@ async function deleteMedicationLogDay(date) {
 
 
 
+
+
 async function renderMedicationLogHistory() {
   const logBox = $("medicationLogHistory");
   logBox.innerHTML = "";
 
   const month = months.medicationLogs;
-
   $("medicationLogsMonth").textContent = monthLabel(month);
 
   const logs = cache.logs.filter(r =>
     (r.date || "").startsWith(month)
   );
 
-  // 해당 월의 날짜 목록
   const [year, monthNumber] = month.split("-").map(Number);
   const lastDay = new Date(year, monthNumber, 0).getDate();
 
-  const dates = Array.from({ length: lastDay }, (_, i) => {
-    return `${month}-${String(i + 1).padStart(2, "0")}`;
-  });
+  const dates = Array.from({ length: lastDay }, (_, i) =>
+    `${month}-${String(i + 1).padStart(2, "0")}`
+  );
 
-  // 선택 날짜가 현재 조회 월에 없으면 기본 날짜 설정
   if (!selectedMedicationLogDate.startsWith(month)) {
-    selectedMedicationLogDate = dates.includes(today)
-      ? today
-      : dates[0];
+    selectedMedicationLogDate = dates.includes(today) ? today : dates[0];
   }
 
-  // 현재 복용 중인 약물 + 해당 월에 기록이 있는 과거 약물
+  // 현재 복용 중인 약물 + 해당 월 기록이 있는 과거 약물
   const medicationMap = new Map();
 
   activeMeds().forEach(med => {
@@ -3113,21 +3156,70 @@ async function renderMedicationLogHistory() {
     }
   });
 
-  const medications = sortMedicationsByTime(
-    [...medicationMap.values()]
-  );
+  const allMeds = [...medicationMap.values()];
 
-  // 날짜 + 약물별 복용 기록 조회
+  // 날짜별 실제 복용 약물 목록
+  function getState(date) {
+    return sortMedicationsByTime(
+      allMeds
+        .map(med => {
+          const info = medicationInfoOnDate(med.id, date);
+
+          if (!info) return null;
+
+          return {
+            id: med.id,
+            name: info.name || med.name || "이름 없는 약물",
+            dose: info.dose ?? med.dose ?? ""
+          };
+        })
+        .filter(Boolean)
+    );
+  }
+
+  // 약물 구성 비교
+  function stateSignature(state) {
+    return JSON.stringify(
+      [...state]
+        .sort((a, b) => String(a.id).localeCompare(String(b.id)))
+        .map(med => [med.id, med.name, med.dose])
+    );
+  }
+
+  // 변경 날짜를 기준으로 구간 나누기
+  const segments = [];
+
+  let segmentStart = 0;
+  let currentState = getState(dates[0]);
+  let currentSignature = stateSignature(currentState);
+
+  for (let i = 1; i < dates.length; i++) {
+    const nextState = getState(dates[i]);
+    const nextSignature = stateSignature(nextState);
+
+    if (nextSignature !== currentSignature) {
+      segments.push({
+        dates: dates.slice(segmentStart, i),
+        medications: currentState
+      });
+
+      segmentStart = i;
+      currentState = nextState;
+      currentSignature = nextSignature;
+    }
+  }
+
+  segments.push({
+    dates: dates.slice(segmentStart),
+    medications: currentState
+  });
+
+  // 날짜 + 약물별 기록 조회
   const logMap = new Map();
 
   logs.forEach(log => {
     logMap.set(`${log.date}_${log.medicationId}`, log);
   });
-
-  // 해당 날짜의 메모 표시 영역
-  const noteBox = document.createElement("div");
-  noteBox.className = "medication-log-note";
-  noteBox.style.marginTop = "10px";
 
   // 기록이 없는 달
   if (!logs.length) {
@@ -3135,222 +3227,282 @@ async function renderMedicationLogHistory() {
     return;
   }
 
-  // 표 바깥쪽 스크롤 영역
+  // 전체 스크롤 영역
   const wrapper = document.createElement("div");
   wrapper.style.overflowX = "auto";
   wrapper.style.width = "100%";
   wrapper.style.border = "1px solid #e5e7eb";
   wrapper.style.borderRadius = "10px";
 
-  // 표 생성
-  const table = document.createElement("table");
-  table.style.borderCollapse = "separate";
-  table.style.borderSpacing = "0";
-  table.style.width = "max-content";
-  table.style.minWidth = "100%";
-  table.style.fontSize = "13px";
+  // 구간별 표를 가로로 연결
+  const tableContainer = document.createElement("div");
+  tableContainer.style.display = "flex";
+  tableContainer.style.alignItems = "flex-start";
+  tableContainer.style.width = "max-content";
 
-  const thead = document.createElement("thead");
-  const headerRow = document.createElement("tr");
-
-  // 왼쪽 약물명 제목
-  const nameHeader = document.createElement("th");
-  nameHeader.textContent = "약물명";
-  nameHeader.style.position = "sticky";
-  nameHeader.style.left = "0";
-  nameHeader.style.zIndex = "4";
-  nameHeader.style.background = "#f3f4f6";
-  nameHeader.style.minWidth = "110px";
-  nameHeader.style.padding = "10px 8px";
-  nameHeader.style.textAlign = "left";
-  nameHeader.style.borderBottom = "1px solid #ddd";
-  nameHeader.style.borderRight = "1px solid #ddd";
-
-  headerRow.appendChild(nameHeader);
-
-  // 날짜별 열 요소 저장
   const dateColumns = new Map();
+const editButtons = new Map();
+let todayHeader = null;
+let firstNameHeader = null;
 
-  // 모바일 자동 스크롤용 오늘 날짜 제목
-  let todayHeader = null;
-
-  dates.forEach(date => {
+  // 약물명 제목
+  function createNameHeader(sticky = false) {
     const th = document.createElement("th");
 
-    th.style.minWidth = "46px";
-    th.style.padding = "6px 3px";
-    th.style.textAlign = "center";
+    th.textContent = "약물명";
+    th.style.width = "max-content";
+th.style.minWidth = "110px";
+th.style.whiteSpace = "nowrap";
+    th.style.padding = "10px 8px";
+    th.style.textAlign = "left";
+    th.style.background = "#f3f4f6";
     th.style.borderBottom = "1px solid #ddd";
-    th.style.borderRight = "1px solid #eee";
-    th.style.verticalAlign = "middle";
-    th.style.cursor = "pointer";
+    th.style.borderRight = "1px solid #ddd";
 
-    if (date === today) {
-      todayHeader = th;
+    if (sticky) {
+      th.style.position = "sticky";
+      th.style.left = "0";
+      th.style.zIndex = "4";
     }
 
-    const day = Number(date.slice(-2));
+    return th;
+  }
 
-    const weekday = ["일", "월", "화", "수", "목", "금", "토"][
-      new Date(year, monthNumber - 1, day).getDay()
-    ];
+  // 약물명 셀
+  function createNameCell(med, sticky = false, eveningDivider = false) {
+    const cell = document.createElement("th");
 
-    // 날짜 숫자
-    const dateText = document.createElement("div");
-    dateText.textContent = `${day}일`;
-    dateText.style.fontWeight = "700";
+    cell.textContent = med.name || "이름 없는 약물";
+    cell.style.background = "#fff";
+    cell.style.width = "max-content";
+cell.style.minWidth = "110px";
+cell.style.whiteSpace = "nowrap";
+    cell.style.padding = "10px 8px";
+    cell.style.textAlign = "left";
+    cell.style.fontWeight = "600";
+    cell.style.fontSize = "12px";
+    cell.style.borderBottom = "1px solid #eee";
+    cell.style.borderRight = "1px solid #ddd";
+    cell.style.whiteSpace = "normal";
+    cell.style.overflowWrap = "anywhere";
 
-    // 요일
-    const weekdayText = document.createElement("div");
-    weekdayText.textContent = weekday;
-    weekdayText.style.fontSize = "11px";
-    weekdayText.style.color = "#777";
-
-    th.append(dateText, weekdayText);
-
-    // 해당 날짜 기록 확인
-    const dayLogs = logs.filter(r => r.date === date);
-
-    // 기록이 있는 날짜에만 수정 버튼 생성
-    if (dayLogs.length) {
-      const editButton = document.createElement("button");
-
-      editButton.type = "button";
-      editButton.textContent = "수정";
-      editButton.style.fontSize = "10px";
-      editButton.style.padding = "2px 4px";
-      editButton.style.marginTop = "5px";
-
-      editButton.addEventListener("click", e => {
-        e.stopPropagation();
-        startMedicationLogEdit(date);
-      });
-
-      th.appendChild(editButton);
+    if (eveningDivider) {
+      cell.style.borderTop = "1px dashed #d1d5db";
     }
 
-    // 날짜 열 선택
-    th.addEventListener("click", () => {
-      selectMedicationLogDate(date);
-    });
-
-    dateColumns.set(date, [th]);
-
-    headerRow.appendChild(th);
-  });
-
-  thead.appendChild(headerRow);
-  table.appendChild(thead);
-
-  // 약물별 행 생성
-  const tbody = document.createElement("tbody");
-
-    medications.forEach((med, medIndex) => {
-    const tr = document.createElement("tr");
-
-    // 첫 번째 저녁 약 앞에 구분선 표시
-    const isEveningDivider =
-      (med.dose || "").includes("저녁") &&
-      !medications
-        .slice(0, medIndex)
-        .some(m => (m.dose || "").includes("저녁"));
-
-    if (isEveningDivider) {
-      tr.style.borderTop = "1px dashed #d1d5db";
+    if (sticky) {
+      cell.style.position = "sticky";
+      cell.style.left = "0";
+      cell.style.zIndex = "2";
     }
 
-       
+    return cell;
+  }
 
-    // 약물명 셀
-    const nameCell = document.createElement("th");
+  // 구간별 독립 표 생성
+  segments.forEach((segment, segmentIndex) => {
+    const table = document.createElement("table");
 
-    nameCell.textContent = med.name || "이름 없는 약물";
-    nameCell.style.position = "sticky";
-    nameCell.style.left = "0";
-    nameCell.style.zIndex = "2";
-    nameCell.style.background = "#fff";
-    nameCell.style.minWidth = "110px";
-    nameCell.style.maxWidth = "140px";
-    nameCell.style.padding = "10px 8px";
-    nameCell.style.textAlign = "left";
-    nameCell.style.fontWeight = "600";
-    nameCell.style.fontSize = "12px";
-    nameCell.style.borderBottom = "1px solid #eee";
-    nameCell.style.borderRight = "1px solid #ddd";
+    table.style.borderCollapse = "separate";
+    table.style.borderSpacing = "0";
+    table.style.width = "max-content";
+    table.style.fontSize = "13px";
+    table.style.flex = "0 0 auto";
 
-        if (isEveningDivider) {
-      nameCell.style.borderTop = "1px dashed #d1d5db";
+    if (segmentIndex > 0) {
+      table.style.borderLeft = "1px solid #ddd";
     }
 
-    nameCell.style.whiteSpace = "normal";
-    nameCell.style.overflowWrap = "anywhere";
+    const thead = document.createElement("thead");
+    const headerRow = document.createElement("tr");
 
-    tr.appendChild(nameCell);
+    // 구간마다 약물명 제목 생성
+    const nameHeader = createNameHeader(segmentIndex === 0);
 
-    // 날짜별 복용 여부
-    dates.forEach(date => {
-      const td = document.createElement("td");
+    if (segmentIndex === 0) {
+      firstNameHeader = nameHeader;
+    }
 
-      td.style.textAlign = "center";
-      td.style.padding = "9px 3px";
-      td.style.minWidth = "46px";
-      td.style.borderBottom = "1px solid #eee";
-      td.style.borderRight = "1px solid #eee";
+    headerRow.appendChild(nameHeader);
 
-            if (isEveningDivider) {
-        td.style.borderTop = "1px dashed #d1d5db";
+    // 해당 구간의 날짜 제목
+    segment.dates.forEach(date => {
+      const th = document.createElement("th");
+
+      th.style.minWidth = "46px";
+      th.style.padding = "6px 3px";
+      th.style.textAlign = "center";
+      th.style.borderBottom = "1px solid #ddd";
+      th.style.borderRight = "1px solid #eee";
+      th.style.verticalAlign = "middle";
+      th.style.cursor = "pointer";
+      th.style.background = "#f3f4f6";
+
+      if (date === today) {
+        todayHeader = th;
       }
-      td.style.cursor = "pointer";
 
-      const log = logMap.get(`${date}_${med.id}`);
+      const day = Number(date.slice(-2));
+
+      const weekday = ["일", "월", "화", "수", "목", "금", "토"][
+        new Date(year, monthNumber - 1, day).getDay()
+      ];
+
+      const dateText = document.createElement("div");
+      dateText.textContent = `${day}일`;
+      dateText.style.fontWeight = "700";
+
+      const weekdayText = document.createElement("div");
+      weekdayText.textContent = weekday;
+      weekdayText.style.fontSize = "11px";
+      weekdayText.style.color = "#777";
+
+      th.append(dateText, weekdayText);
 
       
-      const isActive = medicationActiveOnDate(med.id, date);
 
-      if (!isActive) {
-        td.textContent = "–";
-        td.style.color = "#ccc";
-      } else if (log) {
-        const mark = document.createElement("span");
-
-        if (log.taken === true) {
-          mark.textContent = "✓";
-          mark.style.color = "#16a34a";
-          mark.style.fontWeight = "700";
-          mark.style.fontSize = "17px";
-        } else {
-          mark.textContent = "✕";
-          mark.style.color = "#dc7777";
-          mark.style.fontSize = "17px";
-        }
-
-        td.appendChild(mark);
-      } else {
-        td.textContent = "–";
-        td.style.color = "#ccc";
-      }
-
-
-      // 해당 날짜 열의 요소 목록에 추가
-      dateColumns.get(date).push(td);
-
-      // 날짜 열 선택
-      td.addEventListener("click", () => {
+      th.addEventListener("click", () => {
         selectMedicationLogDate(date);
       });
 
-      tr.appendChild(td);
+      dateColumns.set(date, [th]);
+      headerRow.appendChild(th);
     });
 
-    tbody.appendChild(tr);
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // 구간에 해당하는 약물만 행으로 표시
+    const tbody = document.createElement("tbody");
+
+    const medications = segment.medications;
+
+    medications.forEach((med, medIndex) => {
+      const tr = document.createElement("tr");
+
+      // 첫 번째 저녁 약 앞에 점선
+      const isEveningDivider =
+        (med.dose || "").includes("저녁") &&
+        !medications
+          .slice(0, medIndex)
+          .some(m => (m.dose || "").includes("저녁"));
+
+      tr.appendChild(
+        createNameCell(
+          med,
+          segmentIndex === 0,
+          isEveningDivider
+        )
+      );
+
+      // 해당 구간 날짜만 표시
+      segment.dates.forEach(date => {
+        const td = document.createElement("td");
+
+        td.style.textAlign = "center";
+        td.style.padding = "9px 3px";
+        td.style.minWidth = "46px";
+        td.style.borderBottom = "1px solid #eee";
+        td.style.borderRight = "1px solid #eee";
+        td.style.cursor = "pointer";
+
+        if (isEveningDivider) {
+          td.style.borderTop = "1px dashed #d1d5db";
+        }
+
+        const log = logMap.get(`${date}_${med.id}`);
+
+        if (log) {
+          const mark = document.createElement("span");
+
+          if (log.taken === true) {
+            mark.textContent = "✓";
+            mark.style.color = "#16a34a";
+            mark.style.fontWeight = "700";
+            mark.style.fontSize = "17px";
+          } else {
+            mark.textContent = "✕";
+            mark.style.color = "#dc7777";
+            mark.style.fontSize = "17px";
+          }
+
+          td.appendChild(mark);
+        } else {
+          td.textContent = "–";
+          td.style.color = "#ccc";
+        }
+
+        dateColumns.get(date).push(td);
+
+        td.addEventListener("click", () => {
+          selectMedicationLogDate(date);
+        });
+
+        tr.appendChild(td);
+      });
+
+            tbody.appendChild(tr);
+    });
+
+    // 표 맨 아래 수정 버튼 행
+    const editRow = document.createElement("tr");
+
+    const emptyCell = document.createElement("td");
+    emptyCell.style.minWidth = "110px";
+    emptyCell.style.height = "32px";
+
+    editRow.appendChild(emptyCell);
+
+    segment.dates.forEach(date => {
+      const td = document.createElement("td");
+
+      td.style.textAlign = "center";
+      td.style.minWidth = "46px";
+      td.style.height = "32px";
+      td.style.padding = "3px";
+ 
+
+      const dayLogs = logs.filter(r => r.date === date);
+
+      if (dayLogs.length) {
+        const editButton = document.createElement("button");
+
+        editButton.type = "button";
+        editButton.textContent = "수정";
+        editButton.style.fontSize = "10px";
+        editButton.style.padding = "2px 4px";
+        editButton.style.visibility =
+          date === selectedMedicationLogDate ? "visible" : "hidden";
+
+        editButton.addEventListener("click", e => {
+          e.stopPropagation();
+          startMedicationLogEdit(date);
+        });
+
+        td.appendChild(editButton);
+        editButtons.set(date, editButton);
+      }
+
+      dateColumns.get(date).push(td);
+      editRow.appendChild(td);
+    });
+
+    tbody.appendChild(editRow);
+
+    table.appendChild(tbody);
+    tableContainer.appendChild(table);
   });
 
-  table.appendChild(tbody);
-  wrapper.appendChild(table);
+  wrapper.appendChild(tableContainer);
   logBox.appendChild(wrapper);
+
+  // 메모 영역
+  const noteBox = document.createElement("div");
+  noteBox.className = "medication-log-note";
+  noteBox.style.marginTop = "10px";
   logBox.appendChild(noteBox);
 
-  // 선택 날짜에 맞춰 열 강조 및 메모 갱신
+  // 선택 날짜 강조 및 메모 갱신
   function updateSelectedDate() {
     dateColumns.forEach((elements, date) => {
       const selected = date === selectedMedicationLogDate;
@@ -3359,18 +3511,15 @@ async function renderMedicationLogHistory() {
         el.style.backgroundColor = selected ? "#e8f5e9" : "";
 
         if (el.tagName === "TH") {
-          el.style.backgroundColor = selected ? "#d9f0dd" : "#f3f4f6";
-
-          const button = el.querySelector("button");
-
-          if (button) {
-            button.classList.toggle("hidden", !selected);
-          }
-        }
+  el.style.backgroundColor = selected ? "#d9f0dd" : "#f3f4f6";
+}
+editButtons.forEach((button, date) => {
+  button.style.visibility =
+    date === selectedMedicationLogDate ? "visible" : "hidden";
+});
       });
     });
 
-    // 선택한 날짜의 메모만 표시
     const selectedLogs = logs.filter(
       r => r.date === selectedMedicationLogDate
     );
@@ -3390,16 +3539,15 @@ async function renderMedicationLogHistory() {
     noteBox.style.display = notes ? "" : "none";
   }
 
-  // 날짜 선택 함수
+  // 날짜 선택
   function selectMedicationLogDate(date) {
     selectedMedicationLogDate = date;
     updateSelectedDate();
   }
 
-  // 처음 표시할 때 선택 날짜 적용
   updateSelectedDate();
 
-  // 모바일에서는 오늘 날짜 열이 처음 보이도록 자동 스크롤
+  // 모바일 오늘 날짜 자동 스크롤
   if (
     todayHeader &&
     window.matchMedia("(max-width: 768px)").matches
@@ -3409,12 +3557,14 @@ async function renderMedicationLogHistory() {
         todayHeader.getBoundingClientRect().left -
         wrapper.getBoundingClientRect().left +
         wrapper.scrollLeft -
-        nameHeader.getBoundingClientRect().width;
+        (firstNameHeader?.getBoundingClientRect().width || 110);
 
       wrapper.scrollLeft = Math.max(0, scrollPosition);
     });
   }
 }
+
+
 
 
 
