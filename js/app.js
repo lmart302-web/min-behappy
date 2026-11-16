@@ -1478,10 +1478,7 @@ function buildMedicationChangeNote(action, previous, data) {
   const name = data.name ?? data.medicationName ?? "";
 
   if (action === "등록") {
-    return (
-      `약물 등록 · 용량·복용법: ${data.dose || "미입력"} · ` +
-      `상태: ${data.active ? "복용 중" : "복용 중단"}`
-    );
+    return `약물 등록 · 용량·복용법: ${data.dose || "미입력"}`;
   }
 
   if (action === "정보 수정") {
@@ -1519,7 +1516,9 @@ function buildMedicationChangeNote(action, previous, data) {
   }
 
   if (action === "복용 중단" || action === "복용 재개") {
-    return data.active ? "복용재개" : "복용중단";
+    return data.active
+      ? "상태: 복용 중단 → 복용 중"
+      : "상태: 복용 중 → 복용 중단";
   }
 
   return "";
@@ -2209,13 +2208,7 @@ startDate: data.startDate,
 effectiveDate: data.effectiveDate,
 active: data.active,
 
-        note:
-
-          `약물 등록 · 용량·복용법: ${data.dose || "미입력"} · ` +
-
-          `복용 시작일: ${formatDate(data.startDate)} · ` +
-
-          `상태: ${data.active ? "복용 중" : "복용 중단"}`
+        note: `약물 등록 · 용량·복용법: ${data.dose || "미입력"}`
 
       });
 
