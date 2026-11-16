@@ -3570,7 +3570,7 @@ editButtons.forEach((button, date) => {
   wrapper.getBoundingClientRect().left +
   wrapper.scrollLeft -
   (firstNameHeader?.getBoundingClientRect().width || 110)
-  - 54;
+  - 56;
 
       wrapper.scrollLeft = Math.max(0, scrollPosition);
     });
