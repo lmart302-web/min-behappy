@@ -1718,8 +1718,12 @@ function startMedicationChangeEdit(change) {
 
   f.elements.startDate.value = change.startDate || localDate();
 
-$("medEffectiveDateGroup").classList.add("hidden");
-f.elements.effectiveDate.required = false;
+// 기존 이력에 적용 시작일이 있을 때만 수정란 표시
+const hasEffectiveDate = Boolean(change.effectiveDate);
+
+$("medEffectiveDate").value = change.effectiveDate || "";
+$("medEffectiveDateGroup").classList.toggle("hidden", !hasEffectiveDate);
+f.elements.effectiveDate.required = hasEffectiveDate;
 
   f.elements.active.value = change.active === false ? "false" : "true";
 
@@ -2145,6 +2149,11 @@ await saveDoc(C.changes, original.id, {
   action: updatedAction,
   dose: data.dose,
   startDate: data.startDate,
+
+  ...(original.effectiveDate
+    ? { effectiveDate: data.effectiveDate }
+    : {}),
+
   active: data.active,
   note: buildMedicationChangeNote(updatedAction, previous, data),
   createdAt: original.createdAt
@@ -3013,7 +3022,10 @@ if (r.action === "등록" && r.startDate) {
   lines.push(`복용 시작일: ${formatDate(r.startDate)}`);
 }
 
-
+// 적용 시작일이 저장된 이력에만 표시
+if (r.action !== "등록" && r.effectiveDate) {
+  lines.push(`적용 시작일: ${formatDate(r.effectiveDate)}`);
+}
 
   return [
     `${formatDate(r.date)} · ${r.action || "변경"}`,

@@ -704,3 +704,16 @@ textarea {
     font-size: 20px;
   }
 }
+
+
+/* 대시보드 전용 여백 조정 */
+#dashboardView {
+  padding-top: 2px;
+}
+
+@media (max-width: 650px) {
+  #dashboardView .section-heading {
+    margin-bottom: 12px;
+  }
+}
+

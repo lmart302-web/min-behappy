@@ -7,32 +7,168 @@
   <meta name="theme-color" content="#f8edf2">
   <title>min-behappy · 일상 지원 기록</title>
   <link rel="stylesheet" href="./css/style.css">
-  <style>
-    /* 대시보드 요약 카드는 모바일에서 한눈에 보기 쉽도록 2열·큰 크기로 표시 */
+  
+<style>
+  /* 대시보드 전용 디자인 */
+  #dashboardView {
+    margin: 0 -4px;
+  }
+
+  #dashboardView .section-heading {
+    margin: 0 2px 14px;
+  }
+
+  #dashboardView .section-heading h2 {
+    font-size: 1.3rem;
+    font-weight: 800;
+  }
+
+  #dashboardView .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+    margin-bottom: 12px;
+  }
+
+  #dashboardView .summary-card {
+    min-height: 145px;
+    padding: 19px 16px;
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    border-radius: 19px;
+    border: 1px solid transparent;
+    box-shadow: 0 4px 13px rgba(50, 75, 52, .055);
+    transition: transform .15s, box-shadow .15s;
+  }
+
+  #dashboardView .summary-card:active {
+    transform: scale(.98);
+  }
+
+  #dashboardView .summary-card-icon {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    border-radius: 15px;
+    background: rgba(255, 255, 255, .72);
+    font-size: 27px;
+  }
+
+  #dashboardView .summary-card-content {
+    min-width: 0;
+  }
+
+  #dashboardView .summary-card-content > span {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    opacity: .85;
+  }
+
+  #dashboardView .summary-card-value {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+  }
+
+  #dashboardView .summary-card-value strong {
+    font-size: 32px;
+    line-height: 1.15;
+    font-weight: 800;
+    letter-spacing: -.05em;
+  }
+
+  #dashboardView .summary-card-value small {
+    font-size: 12px;
+    font-weight: 600;
+    opacity: .8;
+  }
+
+  #dashboardView .summary-behavior {
+    background: #e4eee2;
+    border-color: #d5e5d2;
+    color: #456b4b;
+  }
+
+  #dashboardView .summary-crying {
+    background: #eaf0e5;
+    border-color: #dce7d5;
+    color: #5b704d;
+  }
+
+  #dashboardView .summary-weight {
+    background: #e2eee8;
+    border-color: #d2e3d9;
+    color: #426b5b;
+  }
+
+  #dashboardView .summary-meds {
+    background: #edf0e4;
+    border-color: #dfe5d3;
+    color: #68734c;
+  }
+
+  @media (max-width: 650px) {
+    #dashboardView {
+      margin: 0 -2px;
+    }
+
     #dashboardView .summary-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px;
+      gap: 8px;
     }
+
     #dashboardView .summary-card {
-      min-height: 126px;
-      padding: 18px;
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      border-radius: 18px;
+      min-height: 132px;
+      padding: 15px 12px;
+      gap: 10px;
+      border-radius: 17px;
     }
-    #dashboardView .summary-card-icon { font-size: 30px; flex: 0 0 auto; }
-    #dashboardView .summary-card-content > span { font-size: 14px; }
-    #dashboardView .summary-card-value strong { font-size: 29px; }
-    @media (max-width: 380px) {
-      #dashboardView .summary-grid { gap: 10px; }
-      #dashboardView .summary-card { min-height: 116px; padding: 14px 12px; gap: 9px; }
-      #dashboardView .summary-card-icon { font-size: 25px; }
-      #dashboardView .summary-card-content > span { font-size: 12px; }
-      #dashboardView .summary-card-value strong { font-size: 25px; }
+
+    #dashboardView .summary-card-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 13px;
+      font-size: 23px;
     }
-  </style>
+
+    #dashboardView .summary-card-content > span {
+      font-size: 13px;
+      margin-bottom: 7px;
+    }
+
+    #dashboardView .summary-card-value strong {
+      font-size: 28px;
+    }
+  }
+
+  @media (max-width: 380px) {
+    #dashboardView .summary-card {
+      min-height: 120px;
+      padding: 12px 9px;
+      gap: 8px;
+    }
+
+    #dashboardView .summary-card-icon {
+      width: 34px;
+      height: 34px;
+      font-size: 20px;
+    }
+
+    #dashboardView .summary-card-content > span {
+      font-size: 12px;
+    }
+
+    #dashboardView .summary-card-value strong {
+      font-size: 25px;
+    }
+  }
+</style>
+
 </head>
 <body>
   <main class="app">
