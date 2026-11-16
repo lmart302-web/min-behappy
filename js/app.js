@@ -3329,7 +3329,7 @@ cell.style.whiteSpace = "nowrap";
     const headerRow = document.createElement("tr");
 
     // 구간마다 약물명 제목 생성
-    const nameHeader = createNameHeader(segmentIndex === 0);
+    const nameHeader = createNameHeader(true);
 
     if (segmentIndex === 0) {
       firstNameHeader = nameHeader;
@@ -3401,10 +3401,10 @@ cell.style.whiteSpace = "nowrap";
 
       tr.appendChild(
         createNameCell(
-          med,
-          segmentIndex === 0,
-          isEveningDivider
-        )
+  med,
+  true,
+  isEveningDivider
+)
       );
 
       // 해당 구간 날짜만 표시
