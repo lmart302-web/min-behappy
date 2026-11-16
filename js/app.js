@@ -1480,7 +1480,6 @@ function buildMedicationChangeNote(action, previous, data) {
   if (action === "등록") {
     return (
       `약물 등록 · 용량·복용법: ${data.dose || "미입력"} · ` +
-      `복용 시작일: ${formatDate(data.startDate)} · ` +
       `상태: ${data.active ? "복용 중" : "복용 중단"}`
     );
   }
@@ -1510,7 +1509,9 @@ function buildMedicationChangeNote(action, previous, data) {
       const previousActive = previous.active !== false;
 
       if (previousActive !== data.active) {
-        details.push(data.active ? "복용재개" : "복용중단");
+        details.push(
+          `상태: ${previousActive ? "복용 중" : "복용 중단"} → ${data.active ? "복용 중" : "복용 중단"}`
+        );
       }
     }
 
@@ -2246,73 +2247,24 @@ active: data.active,
 
       
             if (nameChanged || doseChanged || startChanged || statusChanged) {
-        const previous = latestChangeForMedication(id);
+  const previous = latestChangeForMedication(id);
 
-        await saveDoc(C.changes, newId(), {
-          date: now,
-          medicationId: id,
-          medicationName: data.name,
-          action: "정보 수정",
-          dose: data.dose,
-          startDate: data.startDate,
-          effectiveDate: data.effectiveDate,
-          active: data.active,
-          note: buildMedicationChangeNote(
-            "정보 수정",
-            previous,
-            data
-          )
-        });
-      }
-
-      if (statusChanged) {
-        await saveDoc(C.changes, newId(), {
-          date: now,
-          medicationId: id,
-          medicationName: data.name,
-          action: data.active ? "복용 재개" : "복용 중단",
-          dose: data.dose,
-          startDate: data.startDate,
-          effectiveDate: data.effectiveDate,
-          active: data.active,
-          note: buildMedicationChangeNote(
-            data.active ? "복용 재개" : "복용 중단",
-            existing,
-            data
-          )
-        });
-      }
-
-
-
-
-      if (statusChanged) {
-
-        await saveDoc(C.changes, newId(), {
-
-          date: now,
-
-          medicationId: id,
-
-          medicationName: data.name,
-
-          action: data.active ? "복용 재개" : "복용 중단",
-
-          effectiveDate: data.effectiveDate,
-
-          dose: data.dose,
-
-          startDate: data.startDate,
-effectiveDate: data.effectiveDate,
-active: data.active,
-note:
-  `약물 등록 · 용량·복용법: ${data.dose || "미입력"} · ` +
-  `복용 시작일: ${formatDate(data.startDate)} · ` +
-  `상태: ${data.active ? "복용 중" : "복용 중단"}`
-
-        });
-
-      }
+  await saveDoc(C.changes, newId(), {
+    date: now,
+    medicationId: id,
+    medicationName: data.name,
+    action: "정보 수정",
+    dose: data.dose,
+    startDate: data.startDate,
+    effectiveDate: data.effectiveDate,
+    active: data.active,
+    note: buildMedicationChangeNote(
+      "정보 수정",
+      previous,
+      data
+    )
+  });
+}
 
     }
 
@@ -3030,12 +2982,17 @@ const details = history.map((r, index) => {
   }
 
   if (note.trim()) {
-    lines.push(note.trim().replace(/\s*\n\s*/g, " · "));
-  }
+  lines.push(note.trim().replace(/\s*\n\s*/g, " · "));
+}
 
-  if (r.effectiveDate) {
-    lines.push(`적용 시작일: ${formatDate(r.effectiveDate)}`);
-  }
+// 복용 시작일은 등록 이력 본문 아래에 별도 표시
+if (r.action === "등록" && r.startDate) {
+  lines.push(`복용 시작일: ${formatDate(r.startDate)}`);
+}
+
+if (r.effectiveDate) {
+  lines.push(`적용 시작일: ${formatDate(r.effectiveDate)}`);
+}
 
   return [
     `${formatDate(r.date)} · ${r.action || "변경"}`,
