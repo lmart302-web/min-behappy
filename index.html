@@ -7,6 +7,32 @@
   <meta name="theme-color" content="#f8edf2">
   <title>min-behappy · 일상 지원 기록</title>
   <link rel="stylesheet" href="./css/style.css">
+  <style>
+    /* 대시보드 요약 카드는 모바일에서 한눈에 보기 쉽도록 2열·큰 크기로 표시 */
+    #dashboardView .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    #dashboardView .summary-card {
+      min-height: 126px;
+      padding: 18px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      border-radius: 18px;
+    }
+    #dashboardView .summary-card-icon { font-size: 30px; flex: 0 0 auto; }
+    #dashboardView .summary-card-content > span { font-size: 14px; }
+    #dashboardView .summary-card-value strong { font-size: 29px; }
+    @media (max-width: 380px) {
+      #dashboardView .summary-grid { gap: 10px; }
+      #dashboardView .summary-card { min-height: 116px; padding: 14px 12px; gap: 9px; }
+      #dashboardView .summary-card-icon { font-size: 25px; }
+      #dashboardView .summary-card-content > span { font-size: 12px; }
+      #dashboardView .summary-card-value strong { font-size: 25px; }
+    }
+  </style>
 </head>
 <body>
   <main class="app">
@@ -134,13 +160,15 @@
 
       <div class="panel">
         <div class="section-heading" style="justify-content:center;">
-          <div class="month-control" style="justify-content:center; width:100%;">
+          <div class="month-control" style="justify-content:center;">
             <button type="button" data-month-target="behavior" data-delta="-1" aria-label="이전 달">‹</button>
             <strong id="behaviorMonth"></strong>
             <button type="button" data-month-target="behavior" data-delta="1" aria-label="다음 달">›</button>
           </div>
         </div>
+      </div>
 
+      <div class="panel">
         <div class="section-heading">
           <h2>월별 통계</h2>
         </div>
@@ -220,13 +248,15 @@
 
       <div class="panel">
         <div class="section-heading" style="justify-content:center;">
-          <div class="month-control" style="justify-content:center; width:100%;">
+          <div class="month-control" style="justify-content:center;">
             <button type="button" data-month-target="crying" data-delta="-1" aria-label="이전 달">‹</button>
             <strong id="cryingMonth"></strong>
             <button type="button" data-month-target="crying" data-delta="1" aria-label="다음 달">›</button>
           </div>
         </div>
+      </div>
 
+      <div class="panel">
         <div class="section-heading">
           <h2>월별 통계</h2>
         </div>
@@ -278,13 +308,15 @@
 
       <div class="panel">
         <div class="section-heading" style="justify-content:center;">
-          <div class="month-control" style="justify-content:center; width:100%;">
+          <div class="month-control" style="justify-content:center;">
             <button type="button" data-month-target="weight" data-delta="-1" aria-label="이전 달">‹</button>
             <strong id="weightMonth"></strong>
             <button type="button" data-month-target="weight" data-delta="1" aria-label="다음 달">›</button>
           </div>
         </div>
+      </div>
 
+      <div class="panel">
         <div class="section-heading">
           <h2>월별 체중 변화</h2>
         </div>
