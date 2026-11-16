@@ -2420,26 +2420,58 @@ function medicationTimeOrder(dose) {
 
 
 /* 복용법을 기준으로 약물 정렬 */
-
 function sortMedicationsByTime(medications) {
-
   return [...medications].sort((a, b) => {
-
     const timeDiff =
-
       medicationTimeOrder(a.dose) - medicationTimeOrder(b.dose);
-
-
 
     if (timeDiff !== 0) return timeDiff;
 
-
-
     return (a.name || "").localeCompare(b.name || "", "ko");
-
   });
-
 }
+
+
+/* 날짜별 약물 복용 상태 확인 */
+
+function medicationActiveOnDate(medicationId, date) {
+  const medication = cache.meds.find(m => m.id === medicationId);
+
+  // 복용 시작일 이전에는 복용하지 않은 것으로 처리
+  if (medication?.startDate && date < medication.startDate) {
+    return false;
+  }
+
+  const history = cache.changes
+    .filter(r => r.medicationId === medicationId)
+    .map(r => ({
+      ...r,
+      appliedDate:
+        r.effectiveDate ||
+        (r.action === "등록" ? r.startDate : "") ||
+        r.date
+    }))
+    .filter(r => r.appliedDate && r.appliedDate <= date)
+    .sort((a, b) => {
+      const dateCompare = a.appliedDate.localeCompare(b.appliedDate);
+
+      if (dateCompare !== 0) return dateCompare;
+
+      return changeTimestamp(a).localeCompare(changeTimestamp(b));
+    });
+
+  if (!history.length) return true;
+
+  const latest = history[history.length - 1];
+
+  if (latest.action === "삭제") return false;
+
+  return latest.active !== false;
+}
+
+
+
+
 
 
 
@@ -3263,8 +3295,21 @@ async function renderMedicationLogHistory() {
   // 약물별 행 생성
   const tbody = document.createElement("tbody");
 
-  medications.forEach((med, medIndex) => {
+    medications.forEach((med, medIndex) => {
     const tr = document.createElement("tr");
+
+    // 첫 번째 저녁 약 앞에 구분선 표시
+    const isEveningDivider =
+      (med.dose || "").includes("저녁") &&
+      !medications
+        .slice(0, medIndex)
+        .some(m => (m.dose || "").includes("저녁"));
+
+    if (isEveningDivider) {
+      tr.style.borderTop = "1px dashed #d1d5db";
+    }
+
+       
 
     // 약물명 셀
     const nameCell = document.createElement("th");
@@ -3282,6 +3327,11 @@ async function renderMedicationLogHistory() {
     nameCell.style.fontSize = "12px";
     nameCell.style.borderBottom = "1px solid #eee";
     nameCell.style.borderRight = "1px solid #ddd";
+
+        if (isEveningDivider) {
+      nameCell.style.borderTop = "1px dashed #d1d5db";
+    }
+
     nameCell.style.whiteSpace = "normal";
     nameCell.style.overflowWrap = "anywhere";
 
@@ -3296,11 +3346,21 @@ async function renderMedicationLogHistory() {
       td.style.minWidth = "46px";
       td.style.borderBottom = "1px solid #eee";
       td.style.borderRight = "1px solid #eee";
+
+            if (isEveningDivider) {
+        td.style.borderTop = "1px dashed #d1d5db";
+      }
       td.style.cursor = "pointer";
 
       const log = logMap.get(`${date}_${med.id}`);
 
-      if (log) {
+      
+      const isActive = medicationActiveOnDate(med.id, date);
+
+      if (!isActive) {
+        td.textContent = "–";
+        td.style.color = "#ccc";
+      } else if (log) {
         const mark = document.createElement("span");
 
         if (log.taken === true) {
@@ -3319,6 +3379,7 @@ async function renderMedicationLogHistory() {
         td.textContent = "–";
         td.style.color = "#ccc";
       }
+
 
       // 해당 날짜 열의 요소 목록에 추가
       dateColumns.get(date).push(td);
