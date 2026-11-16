@@ -400,38 +400,46 @@
           </select>
         </div>
 
-        <form id="medicationForm" class="record-form">
-          <input type="hidden" name="id">
+        
+<form id="medicationForm" class="record-form">
+  <input type="hidden" name="id">
 
-          <div class="form-grid">
-            <div>
-              <label for="medName">약물명</label>
-              <input id="medName" name="name" type="text" required placeholder="약물 이름">
-            </div>
-            <div>
-              <label for="medDose">현재 용량·복용법</label>
-              <input id="medDose" name="dose" type="text" placeholder="예: 1정, 아침 식후">
-            </div>
-            <div>
-              <label for="medStartDate">시작 날짜</label>
-              <input id="medStartDate" name="startDate" type="date" required>
-            </div>
-            <div>
-              <label for="medStatus">복용 상태</label>
-              <select id="medStatus" name="active">
-                <option value="true">복용 중</option>
-                <option value="false">복용 중단</option>
-                <option value="delete">🗑 선택한 약물 삭제</option>
-              </select>
-            </div>
-          </div>
+  <div class="form-grid">
+    <div>
+      <label for="medName">약물명</label>
+      <input id="medName" name="name" type="text" required placeholder="약물 이름">
+    </div>
+    <div>
+      <label for="medStartDate">복용 시작일</label>
+      <input id="medStartDate" name="startDate" type="date" required>
+    </div>
+    <div>
+      <label for="medDose">현재 용량·복용법</label>
+      <input id="medDose" name="dose" type="text" placeholder="예: 1정, 아침 식후">
+    </div>
+    <div>
+      <label for="medStatus">복용 상태</label>
+      <select id="medStatus" name="active">
+        <option value="true">복용 중</option>
+        <option value="false">복용 중단</option>
+        <option value="delete">🗑 선택한 약물 삭제</option>
+      </select>
+    </div>
+  </div>
 
-          <div class="form-actions">
-            <button class="button button-primary" type="submit">약물 등록</button>
-            <button class="button button-secondary hidden" id="cancelMedicationEdit" type="button">선택 취소</button>
-          </div>
-          <p class="form-message" id="medicationMessage" role="status"></p>
-        </form>
+  <div>
+    <label for="medEffectiveDate">적용 시작일</label>
+    <input id="medEffectiveDate" name="effectiveDate" type="date" required>
+    <small class="hint">변경된 용량·복용법 또는 복용상태가 실제로 적용되는 날짜</small>
+  </div>
+
+  <div class="form-actions">
+    <button class="button button-primary" type="submit">약물 등록</button>
+    <button class="button button-secondary hidden" id="cancelMedicationEdit" type="button">선택 취소</button>
+  </div>
+  <p class="form-message" id="medicationMessage" role="status"></p>
+</form>
+
       </div>
     </section>
 
