@@ -1535,6 +1535,8 @@ function resetMedicationForm(clearMessage = true) {
   f.reset();
   f.elements.id.value = "";
   $("medManageSelect").value = "";
+  $("medNameGroup").classList.remove("hidden");
+  $("medName").required = true;
 
   $("medStartDate").value = localDate();
   $("medEffectiveDate").value = "";
@@ -1642,7 +1644,9 @@ function selectMedicationForEdit(id) {
 
   f.elements.id.value = med.id;
 
-  f.elements.name.value = med.name || "";
+f.elements.name.value = med.name || "";
+$("medNameGroup").classList.add("hidden");
+f.elements.name.required = false;
 
   f.elements.dose.value = med.dose || "";
 
