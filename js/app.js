@@ -1537,10 +1537,10 @@ function resetMedicationForm(clearMessage = true) {
   $("medManageSelect").value = "";
 
   $("medStartDate").value = localDate();
-  $("medEffectiveDate").value = $("medStartDate").value;
+  $("medEffectiveDate").value = "";
 
-  $("medEffectiveDateGroup").classList.remove("hidden");
-f.elements.effectiveDate.required = true;
+$("medEffectiveDateGroup").classList.add("hidden");
+f.elements.effectiveDate.required = false;
 
   $("medStatus").value = "true";
   $("cancelMedicationEdit").classList.add("hidden");
@@ -2073,7 +2073,7 @@ const data = {
 if (
   !data.name ||
   !data.startDate ||
-  (!editingChangeId && !data.effectiveDate)
+  (editingId && !editingChangeId && !data.effectiveDate)
 ) {
   throw new Error("약물명과 복용 시작일을 입력해 주세요.");
 }
@@ -3713,24 +3713,19 @@ async function renderDashboard() {
 
 
 for (const id of [
-
   "behaviorDate",
-
   "cryDate",
-
   "weightDate",
-
   "medStartDate",
-
-  "medEffectiveDate",
-
   "medLogDate"
-
 ]) {
-
   if ($(id)) $(id).value = today;
-
 }
+
+// 새 약물 등록이 기본 상태이므로 적용 시작일은 숨김
+$("medEffectiveDate").value = "";
+$("medEffectiveDateGroup").classList.add("hidden");
+$("medicationForm").elements.effectiveDate.required = false;
 
 
 
