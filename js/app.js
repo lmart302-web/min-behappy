@@ -3520,40 +3520,48 @@ cell.style.whiteSpace = "nowrap";
 
   // 선택 날짜 강조 및 메모 갱신
   function updateSelectedDate() {
-    dateColumns.forEach((elements, date) => {
-      const selected = date === selectedMedicationLogDate;
+  dateColumns.forEach((elements, date) => {
+    const selected = date === selectedMedicationLogDate;
 
-      elements.forEach(el => {
-        el.style.backgroundColor = selected ? "#e8f5e9" : "";
-
-        if (el.tagName === "TH") {
-  el.style.backgroundColor = selected ? "#d9f0dd" : "#f3f4f6";
-}
-editButtons.forEach((button, date) => {
-  button.style.visibility =
-    date === selectedMedicationLogDate ? "visible" : "hidden";
-});
-      });
-    });
-
-    const selectedLogs = logs.filter(
-      r => r.date === selectedMedicationLogDate
-    );
-
-    const notes = [
-      ...new Set(
-        selectedLogs
-          .map(r => (r.note || "").trim())
-          .filter(Boolean)
-      )
-    ].join("\n");
-
-    noteBox.textContent = notes
-      ? `${formatDate(selectedMedicationLogDate)} 메모: ${notes}`
-      : "";
-
-    noteBox.style.display = notes ? "" : "none";
+    elements.forEach(el => {
+  if (el.closest("tr")?.querySelector("button")) {
+    el.style.backgroundColor = "";
+    return;
   }
+
+  el.style.backgroundColor = selected ? "#e8f5e9" : "";
+
+  if (el.tagName === "TH") {
+    el.style.backgroundColor = selected ? "#d9f0dd" : "#f3f4f6";
+  }
+});
+  });
+
+  editButtons.forEach((button, date) => {
+    button.style.visibility =
+      date === selectedMedicationLogDate ? "visible" : "hidden";
+
+    button.style.backgroundColor = "";
+  });
+
+  const selectedLogs = logs.filter(
+    r => r.date === selectedMedicationLogDate
+  );
+
+  const notes = [
+    ...new Set(
+      selectedLogs
+        .map(r => (r.note || "").trim())
+        .filter(Boolean)
+    )
+  ].join("\n");
+
+  noteBox.textContent = notes
+    ? `${formatDate(selectedMedicationLogDate)} 메모: ${notes}`
+    : "";
+
+  noteBox.style.display = notes ? "" : "none";
+}
 
   // 날짜 선택
   function selectMedicationLogDate(date) {
