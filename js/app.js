@@ -3640,6 +3640,7 @@ function recordsOfMonth(type, month) {
     );
 }
 
+
 function reportEventCard(title, records, types) {
   const intensities = records.map(r => num(r.intensity)).filter(n => n >= 1 && n <= 5);
   const durations = records.map(r => num(r.duration));
@@ -3651,9 +3652,16 @@ function reportEventCard(title, records, types) {
     .map(([t, n]) => `${esc(t)} ${n}회`)
     .join(" · ");
 
+  const pattern = title.includes("행동")
+    ? '<i class="rp-legend-dot behavior"></i>'
+    : '<i class="rp-legend-dot crying"></i>';
+
   return `
     <section class="report-stat">
-      <h3>${title}</h3>
+      <h3 class="report-stat-heading">
+        ${pattern}
+        ${title}
+      </h3>
       <dl>
         <div><dt>발생 횟수</dt><dd>${records.length}회</dd></div>
         <div><dt>발생 일수</dt><dd>${days}일</dd></div>
@@ -3664,6 +3672,7 @@ function reportEventCard(title, records, types) {
     </section>`;
 }
 
+
 function reportWeightCard(records) {
   const first = records[0];
   const last = records[records.length - 1];
@@ -3671,7 +3680,10 @@ function reportWeightCard(records) {
 
   return `
     <section class="report-stat">
-      <h3>체중 통계</h3>
+      <h3 class="report-stat-heading">
+  <span class="rp-weight-icon">⚖️</span>
+  체중 통계
+</h3>
       <dl>
         <div><dt>월초 체중</dt><dd>${first ? num(first.weight).toFixed(1) + "kg" : "-"}</dd></div>
         <div><dt>최근 체중</dt><dd>${last ? num(last.weight).toFixed(1) + "kg" : "-"}</dd></div>
@@ -3852,24 +3864,23 @@ async function renderReport() {
       </table>`;
   }).join("");
 
-  $("reportPage").innerHTML = `
-    <div class="report-title">
-            <h2>${monthLabel(month)} 월간 리포트</h2>
-      <div class="report-legend">
-        <span><i class="rp-legend-dot behavior"></i>행동</span>
-        <span><i class="rp-legend-dot crying"></i>울음</span>
-                <span>세로축: 하루 횟수</span>
-      </div>
-    </div>
+  
+ $("reportPage").innerHTML = `
+  <div class="report-title">
+    <h2>${monthLabel(month)} 월간 리포트</h2>
+  </div>
 
-    <div class="report-stats">
-      ${reportEventCard("행동 통계", behavior, ["타해", "자해", "물건 던지기", "그외"])}
-      ${reportEventCard("울음 통계", crying, ["울음", "흐느낌", "격한 울음", "그외"])}
-      ${reportWeightCard(weight)}
-    </div>
+  <div class="report-stats">
+    ${reportEventCard("행동 통계", behavior, ["타해", "자해", "물건 던지기", "그외"])}
+    ${reportEventCard("울음 통계", crying, ["울음", "흐느낌", "격한 울음", "그외"])}
+    ${reportWeightCard(weight)}
+  </div>
 
-    <div class="report-tables">${tables}</div>
-  `;
+  <div class="report-chart-axis-label">세로축: 하루 횟수</div>
+
+  <div class="report-tables">${tables}</div>
+`;
+
 }
 
 
