@@ -3796,9 +3796,10 @@ async function renderReport() {
 
   const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
 
-  const axis = Array.from({ length: REPORT_MAX_Y + 1 }, (_, v) =>
-    `<span style="bottom:${(v / REPORT_MAX_Y) * 100}%">${v}</span>`
-  ).join("");
+ const axis = Array.from({ length: REPORT_MAX_Y - 1 }, (_, i) => {
+  const v = i + 1;
+  return `<span style="bottom:${(v / REPORT_MAX_Y) * 100}%">${v}</span>`;
+}).join("");
 
   const { segments, logs } = reportSegments(dates, month);
   const logMap = new Map(logs.map(l => [`${l.date}_${l.medicationId}`, l]));
