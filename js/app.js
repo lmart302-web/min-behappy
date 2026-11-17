@@ -62,7 +62,9 @@ const months = {
 
   weight: today.slice(0, 7),
 
-  medicationLogs: today.slice(0, 7)
+  medicationLogs: today.slice(0, 7),
+
+  report: today.slice(0, 7)
 
 };
 
@@ -332,6 +334,8 @@ async function renderCurrent() {
   if (activeView === "weight") await renderWeight();
 
   if (activeView === "medication") await renderMedication();
+
+  if (activeView === "report") await renderReport();
 
 }
 
@@ -3618,7 +3622,284 @@ async function renderMedication() {
 
 }
 
+// 월간 리포트
 
+const REPORT_MAX_Y = 6;
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
+
+function recordsOfMonth(type, month) {
+  return cache[type]
+    .filter(r => (r.date || "").startsWith(month))
+    .sort((a, b) =>
+      `${a.date} ${a.time || ""}`.localeCompare(`${b.date} ${b.time || ""}`)
+    );
+}
+
+function reportEventCard(title, records, types) {
+  const intensities = records.map(r => num(r.intensity)).filter(n => n >= 1 && n <= 5);
+  const durations = records.map(r => num(r.duration));
+  const days = new Set(records.map(r => r.date)).size;
+
+  const typeText = types
+    .map(t => [t, records.filter(r => r.type === t).length])
+    .filter(([, n]) => n > 0)
+    .map(([t, n]) => `${esc(t)} ${n}회`)
+    .join(" · ");
+
+  return `
+    <section class="report-stat">
+      <h3>${title}</h3>
+      <dl>
+        <div><dt>발생 횟수</dt><dd>${records.length}회</dd></div>
+        <div><dt>발생 일수</dt><dd>${days}일</dd></div>
+        <div><dt>평균 강도</dt><dd>${displayNum(avg(intensities))}</dd></div>
+        <div><dt>평균 지속</dt><dd>${durations.length ? displayNum(avg(durations)) + "분" : "-"}</dd></div>
+      </dl>
+      <div class="types">${typeText}</div>
+    </section>`;
+}
+
+function reportWeightCard(records) {
+  const first = records[0];
+  const last = records[records.length - 1];
+  const change = records.length > 1 ? num(last.weight) - num(first.weight) : null;
+
+  return `
+    <section class="report-stat">
+      <h3>체중 통계</h3>
+      <dl>
+        <div><dt>월초 체중</dt><dd>${first ? num(first.weight).toFixed(1) + "kg" : "-"}</dd></div>
+        <div><dt>최근 체중</dt><dd>${last ? num(last.weight).toFixed(1) + "kg" : "-"}</dd></div>
+        <div><dt>월간 변화</dt><dd>${change == null ? "-" : (change > 0 ? "+" : "") + change.toFixed(1) + "kg"}</dd></div>
+        <div><dt>측정 일수</dt><dd>${records.length}일</dd></div>
+      </dl>
+      <div class="types"></div>
+    </section>`;
+}
+
+
+// 리포트: 선택한 달의 구간 나누기 (약물 구성이 바뀔 때마다 새 구간)
+function reportSegments(dates, month) {
+  const logs = cache.logs.filter(r => (r.date || "").startsWith(month));
+
+  const ids = new Set([
+    ...cache.meds.map(m => m.id),
+    ...cache.changes.map(c => c.medicationId).filter(Boolean),
+    ...logs.map(l => l.medicationId)
+  ]);
+
+  const nameFallback = new Map();
+  logs.forEach(l => nameFallback.set(l.medicationId, l));
+
+  function stateOf(date) {
+    const list = [];
+
+    ids.forEach(id => {
+      const info = medicationInfoOnDate(id, date);
+      if (!info) return;
+
+      list.push({
+        id,
+        name: info.name || nameFallback.get(id)?.medicationName || "이름 없는 약물",
+        dose: info.dose ?? ""
+      });
+    });
+
+    return sortMedicationsByTime(list);
+  }
+
+  const signature = state =>
+    JSON.stringify(
+      [...state]
+        .sort((a, b) => String(a.id).localeCompare(String(b.id)))
+        .map(m => [m.id, m.name, m.dose])
+    );
+
+  const segments = [];
+  let start = 0;
+  let current = stateOf(dates[0]);
+  let currentSig = signature(current);
+
+  for (let i = 1; i < dates.length; i++) {
+    const next = stateOf(dates[i]);
+    const nextSig = signature(next);
+
+    if (nextSig !== currentSig) {
+      segments.push({ dates: dates.slice(start, i), medications: current });
+      start = i;
+      current = next;
+      currentSig = nextSig;
+    }
+  }
+
+  segments.push({ dates: dates.slice(start), medications: current });
+
+  return { segments, logs };
+}
+
+// 리포트: 점 하나 그리기 (n번째 횟수 높이에 쌓기)
+function reportDot(cls, count, side, title) {
+  const left = side === "left" ? 30 : 70;
+  const bottom = (Math.min(count, REPORT_MAX_Y) / REPORT_MAX_Y) * 100;
+
+  return `<span class="rp-dot ${cls}" style="left:${left}%;bottom:${bottom}%"
+    title="${esc(title)}"></span>`;
+}
+
+// 리포트: 날짜 한 칸의 그래프 (눈금선 + 횟수만큼 쌓인 점)
+function reportChartDay(date, behavior, crying) {
+  let html = "";
+
+  for (let v = 0; v <= REPORT_MAX_Y; v++) {
+    html += `<div class="rp-grid" style="bottom:${(v / REPORT_MAX_Y) * 100}%"></div>`;
+  }
+
+  behavior
+    .filter(r => r.date === date)
+    .forEach((r, i) => {
+      html += reportDot(
+        "behavior", i + 1, "left",
+        `${formatDate(r.date)} ${r.time || ""} 행동(${r.type}) ${i + 1}회째`
+      );
+    });
+
+  crying
+    .filter(r => r.date === date)
+    .forEach((r, i) => {
+      html += reportDot(
+        "crying", i + 1, "right",
+        `${formatDate(r.date)} ${r.time || ""} 울음(${r.type}) ${i + 1}회째`
+      );
+    });
+
+  return html;
+}
+
+
+async function renderReport() {
+  const month = months.report;
+
+  const [year, monthNumber] = month.split("-").map(Number);
+  const lastDay = new Date(year, monthNumber, 0).getDate();
+  const dates = Array.from({ length: lastDay }, (_, i) =>
+    `${month}-${String(i + 1).padStart(2, "0")}`
+  );
+
+  const behavior = recordsOfMonth("behavior", month);
+  const crying = recordsOfMonth("crying", month);
+  const weight = recordsOfMonth("weight", month);
+
+  const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
+
+  const axis = Array.from({ length: REPORT_MAX_Y + 1 }, (_, v) =>
+    `<span style="bottom:${(v / REPORT_MAX_Y) * 100}%">${v}</span>`
+  ).join("");
+
+  const { segments, logs } = reportSegments(dates, month);
+  const logMap = new Map(logs.map(l => [`${l.date}_${l.medicationId}`, l]));
+
+  // 구간별 표 만들기
+  const tables = segments.map(seg => {
+    // 그래프 줄
+    const chartRow =
+      `<tr class="rp-chart-row">
+        <th class="name"><div class="rp-axis">${axis}</div></th>
+        ${seg.dates.map(d =>
+          `<td><div class="rp-chart">${reportChartDay(d, behavior, crying)}</div></td>`
+        ).join("")}
+      </tr>`;
+
+    // 약물명 + 날짜 줄 (그래프 아래)
+    const headRow =
+      `<tr class="rp-head-row">
+        <th class="name">약물명</th>
+        ${seg.dates.map(d => {
+          const day = Number(d.slice(-2));
+          const wd = weekdays[new Date(year, monthNumber - 1, day).getDay()];
+          const color = wd === "일" ? "#d9534f" : wd === "토" ? "#3b82c4" : "inherit";
+          return `<th style="color:${color}">${day}<br>${wd}</th>`;
+        }).join("")}
+      </tr>`;
+
+    // 약물 줄
+    const medRows = seg.medications.map(med => {
+      let row = `<tr><th class="name">${esc(med.name)}</th>`;
+
+      seg.dates.forEach(date => {
+        const log = logMap.get(`${date}_${med.id}`);
+
+        if (log) {
+          row += log.taken === true
+            ? `<td style="color:#16a34a;font-weight:700">✓</td>`
+            : `<td style="color:#dc7777">✕</td>`;
+        } else {
+          row += `<td style="color:#ccc">–</td>`;
+        }
+      });
+
+      return row + "</tr>";
+    }).join("");
+
+    return `
+      <table class="report-table" style="flex:${seg.dates.length} 1 0">
+        <tbody>${chartRow}${headRow}${medRows}</tbody>
+      </table>`;
+  }).join("");
+
+  $("reportPage").innerHTML = `
+    <div class="report-title">
+            <h2>${monthLabel(month)} 월간 리포트</h2>
+      <div class="report-legend">
+        <span><i class="rp-legend-dot behavior"></i>행동</span>
+        <span><i class="rp-legend-dot crying"></i>울음</span>
+                <span>세로축: 하루 횟수</span>
+      </div>
+    </div>
+
+    <div class="report-stats">
+      ${reportEventCard("행동 통계", behavior, ["타해", "자해", "물건 던지기", "그외"])}
+      ${reportEventCard("울음 통계", crying, ["울음", "흐느낌", "격한 울음", "그외"])}
+      ${reportWeightCard(weight)}
+    </div>
+
+    <div class="report-tables">${tables}</div>
+  `;
+}
+
+
+
+
+
+
+// 홈화면에서 월 선택 후 리포트 열기
+$("reportMonthPicker").value = today.slice(0, 7);
+
+$("openReport").addEventListener("click", async () => {
+  const picked = $("reportMonthPicker").value;
+
+  if (!picked) {
+    alert("리포트를 볼 년도와 월을 선택해 주세요.");
+    return;
+  }
+
+  try {
+    months.report = picked;
+    await renderReport();
+    window.print();
+  } catch (err) {
+    console.error(err);
+    alert("리포트를 만들지 못했어요.");
+  }
+});
+
+
+
+ 
 
 // 대시보드
 

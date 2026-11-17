@@ -167,6 +167,11 @@
       font-size: 25px;
     }
   }
+
+  
+  /* 리포트는 인쇄할 때만 보임 */
+  #reportPage { display: none; }
+  
 </style>
 
 </head>
@@ -234,6 +239,17 @@
           </div>
         </article>
       </div>
+
+      <div class="panel" style="margin-top:6px;">
+  <div class="section-heading">
+    <h2>월간 리포트</h2>
+    <span class="hint">월을 선택해 인쇄용 리포트를 열어요</span>
+  </div>
+  <div class="form-actions" style="align-items:center;">
+    <input id="reportMonthPicker" type="month" style="flex:1; min-width:0;">
+   <button class="button button-primary" id="openReport" type="button">인쇄 / PDF 저장</button>
+  </div>
+</div>
 
     </section>
 
@@ -587,6 +603,8 @@
 
       </div>
     </section>
+
+<div id="reportPage" class="report-page"></div>
 
     <footer class="footer">min-behappy · 일상 지원 기록</footer>
   </main>
