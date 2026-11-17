@@ -740,8 +740,14 @@ textarea {
 .report-stat h3 { color:#456b4b; padding-bottom:5px; border-bottom:1px solid #e3ebe0; }
 .report-stat dd { color:#2f4a35; }
 .report-tables { border:1px solid #dfe8dc; border-radius:10px; padding:8px; background:#fcfdfb; }
-.report-table .rp-head-row th { background:#eef4ec; color:#456b4b; }
-.report-table .name { background:#f3f7f1; color:#456b4b; font-weight:600; }
+.report-table .rp-head-row th {
+  background: #eef4ec;
+  color: #456b4b;
+}
+
+
+
+
 .rp-grid { border-top-color: rgba(70,107,75,.12); }
 .report-stat { border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px; }
 .report-stat h3 { margin:0 0 8px; font-size:13px; }
@@ -753,7 +759,7 @@ textarea {
 .report-tables { display:flex; align-items:flex-start; gap:6px; width:100%; }
 .report-table { table-layout:fixed; border-collapse:collapse; min-width:0; }
 .report-table th, .report-table td { border:1px solid #eee; text-align:center; padding:0; }
-.report-table .name { width:64px; font-size:9px; padding:3px; text-align:left; background:#fafafa; overflow-wrap:anywhere; }
+
 .report-table .rp-head-row th { background:#f3f4f6; font-size:9px; padding:3px 0; }
 .report-table td { height:22px; font-size:11px; }
 .report-table .rp-chart-row td, .report-table .rp-chart-row th { height:auto; padding:0; }
@@ -849,4 +855,22 @@ textarea {
   flex-shrink: 0;
 }
 
+/* 약물명 열 */
+.report-table .name {
+  width: 64px;
+  font-size: 9px;
+  padding: 3px;
+  background: #fafafa;
+  color: #456b4b;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
 
+/* 약물명 제목은 가운데, 실제 약물명은 왼쪽 */
+.report-table .rp-head-row th.name {
+  text-align: center !important;
+}
+
+.report-table tr:not(.rp-head-row) th.name {
+  text-align: left !important;
+}

@@ -3274,7 +3274,7 @@ let firstNameHeader = null;
 th.style.minWidth = "110px";
 th.style.whiteSpace = "nowrap";
     th.style.padding = "10px 8px";
-    th.style.textAlign = "left";
+    th.style.textAlign = "center";
     th.style.background = "#f3f4f6";
     th.style.borderBottom = "1px solid #ddd";
     th.style.borderRight = "1px solid #ddd";
@@ -3366,14 +3366,21 @@ cell.style.whiteSpace = "nowrap";
         new Date(year, monthNumber - 1, day).getDay()
       ];
 
+      const dayOfWeek = new Date(year, monthNumber - 1, day).getDay();
+const dayColor =
+  dayOfWeek === 0 ? "#d9534f" :
+  dayOfWeek === 6 ? "#3b82c4" :
+  "#777";
+
       const dateText = document.createElement("div");
-      dateText.textContent = `${day}일`;
-      dateText.style.fontWeight = "700";
+      dateText.textContent = `${day}`;
+      
+      dateText.style.color = dayColor;
 
       const weekdayText = document.createElement("div");
       weekdayText.textContent = weekday;
       weekdayText.style.fontSize = "11px";
-      weekdayText.style.color = "#777";
+      weekdayText.style.color = dayColor;
 
       th.append(dateText, weekdayText);
 
@@ -3830,7 +3837,7 @@ async function renderReport() {
     // 약물명 + 날짜 줄 (그래프 아래)
     const headRow =
       `<tr class="rp-head-row">
-        <th class="name">약물명</th>
+        <th class="name" style="text-align:center; vertical-align:middle;">약물명</th>
         ${seg.dates.map(d => {
           const day = Number(d.slice(-2));
           const wd = weekdays[new Date(year, monthNumber - 1, day).getDay()];
@@ -3841,7 +3848,7 @@ async function renderReport() {
 
     // 약물 줄
     const medRows = seg.medications.map(med => {
-      let row = `<tr><th class="name">${esc(med.name)}</th>`;
+      let row = `<tr><th class="name" style="text-align:center; vertical-align:middle;">${esc(med.name)}</th>`;
 
       seg.dates.forEach(date => {
         const log = logMap.get(`${date}_${med.id}`);
