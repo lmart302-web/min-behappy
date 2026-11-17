@@ -3325,9 +3325,7 @@ cell.style.whiteSpace = "nowrap";
     table.style.fontSize = "13px";
     table.style.flex = "0 0 auto";
 
-    if (segmentIndex > 0) {
-      table.style.borderLeft = "1px solid #ddd";
-    }
+    
 
     const thead = document.createElement("thead");
     const headerRow = document.createElement("tr");
