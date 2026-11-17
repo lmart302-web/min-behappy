@@ -516,12 +516,20 @@
       </div>
 
       <div class="panel">
-        <div class="section-heading">
-          <h2>약물 변경 이력</h2>
-          <span class="hint">등록·정보 변경·복용 상태 변경·삭제</span>
-        </div>
-        <div id="medicationChanges" class="record-list"></div>
-      </div>
+  <div class="section-heading"
+       style="cursor:pointer;"
+       onclick="const box = document.getElementById('medicationChanges'); const icon = document.getElementById('medicationChangesArrow'); box.classList.toggle('hidden'); icon.textContent = box.classList.contains('hidden') ? '＋' : '－';">
+
+    <h2>약물 변경 이력</h2>
+
+    <div style="display:flex; align-items:center; gap:8px;">
+      <span class="hint">등록·정보 변경·복용 상태 변경·삭제</span>
+      <strong id="medicationChangesArrow">＋</strong>
+    </div>
+  </div>
+
+  <div id="medicationChanges" class="record-list hidden"></div>
+</div>
 
       <div class="panel">
         <div class="section-heading">
