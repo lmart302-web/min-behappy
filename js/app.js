@@ -963,20 +963,17 @@ $("weightForm").addEventListener("submit", async e => {
   try {
 
     const data = {
+  date: f.elements.date.value,
+  weight: num(f.elements.weight.value),
+  lunchMenu: f.elements.lunchMenu.value.trim(),
+  beverageType: f.elements.beverageType.value.trim(),
+  beverageCount: f.elements.beverageCount.value === ""
+    ? ""
+    : num(f.elements.beverageCount.value)
+};
 
-      date: f.elements.date.value,
 
-      weight: num(f.elements.weight.value)
-
-    };
-
-
-
-    if (!data.date || data.weight <= 0) {
-
-      throw new Error("측정 날짜와 체중을 확인해 주세요.");
-
-    }
+  
 
 
 
@@ -1028,7 +1025,7 @@ $("weightForm").addEventListener("submit", async e => {
 
 
 
-    showMessage("weightMessage", "체중을 저장했어요.");
+    showMessage("weightMessage", "기록을 저장했어요.");
 
     await renderWeight();
 
@@ -1320,11 +1317,33 @@ async function renderWeight() {
 
     const title = document.createElement("div");
 
-    title.className = "record-title";
+title.className = "record-title";
 
-    title.textContent =
+const extraInfo = [];
 
-      `${formatDate(r.date)} · ${num(r.weight).toFixed(1)}kg`;
+if (r.lunchMenu) {
+  extraInfo.push(`점심: ${r.lunchMenu}`);
+}
+
+const beverageParts = [];
+
+if (r.beverageType) {
+  beverageParts.push(r.beverageType);
+}
+
+if (r.beverageCount !== undefined && r.beverageCount !== "") {
+  beverageParts.push(`${r.beverageCount}회`);
+}
+
+if (beverageParts.length) {
+  extraInfo.push(`음료: ${beverageParts.join(" · ")}`);
+}
+
+title.textContent =
+  `${formatDate(r.date)} · ${num(r.weight).toFixed(1)}kg` +
+  (extraInfo.length ? `\n${extraInfo.join(" / ")}` : "");
+
+title.style.whiteSpace = "pre-line";
 
 
 
@@ -1369,10 +1388,11 @@ async function renderWeight() {
 
 
       f.elements.id.value = r.id;
-
-      f.elements.date.value = r.date;
-
-      f.elements.weight.value = r.weight;
+f.elements.date.value = r.date;
+f.elements.weight.value = r.weight;
+f.elements.lunchMenu.value = r.lunchMenu || "";
+f.elements.beverageType.value = r.beverageType || "";
+f.elements.beverageCount.value = r.beverageCount ?? "";
 
 
 
