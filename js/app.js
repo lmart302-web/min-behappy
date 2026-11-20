@@ -941,12 +941,6 @@ async function renderCrying() {
 }
 
 
-
-// 체중 기록
-
-
-
-
  // 체중 기록
 
 function addBeverageRow(type = "", count = "") {
@@ -956,7 +950,7 @@ function addBeverageRow(type = "", count = "") {
   const typeInput = document.createElement("input");
   typeInput.type = "text";
   typeInput.className = "beverage-type";
-  typeInput.placeholder = "음료 종류 및 용량 (예: 제로콜라350ml)";
+  typeInput.placeholder = "음료명";
   typeInput.value = type;
 
   const countInput = document.createElement("input");
@@ -1021,21 +1015,7 @@ $("beverageEntries").addEventListener("click", e => {
   }
 });
 
-// 기존 단일 음료 기록도 호환
-function beverageRecords(record) {
-  if (Array.isArray(record.beverages)) {
-    return record.beverages;
-  }
 
-  if (record.beverageType) {
-    return [{
-      type: record.beverageType,
-      count: record.beverageCount ?? ""
-    }];
-  }
-
-  return [];
-}
 
 resetBeverageEntries();
 
@@ -1373,18 +1353,38 @@ async function renderWeight() {
 
 
 
-    const title = document.createElement("div");
-
+const title = document.createElement("div");
 title.className = "record-title";
 
-const extraInfo = [];
+const date = document.createElement("div");
+date.textContent = formatDate(r.date);
+date.style.fontSize = "13px";
+date.style.color = "#777";
+
+const weight = document.createElement("div");
+weight.textContent = `${num(r.weight).toFixed(1)}kg`;
+weight.style.fontSize = "17px";
+weight.style.fontWeight = "700";
+weight.style.color =  "#303b32";
+weight.style.marginBottom = "5px";
+
+title.append(date, weight);
 
 if (r.lunchMenu) {
-  extraInfo.push(`점심: ${r.lunchMenu}`);
+  const lunch = document.createElement("div");
+  lunch.style.fontSize = "13px";
+  lunch.style.marginTop = "3px";
+
+  const label = document.createElement("span");
+  label.textContent = "점심 ";
+  label.style.color = "#4d85b5";
+  label.style.fontWeight = "600";
+
+  lunch.append(label, document.createTextNode(r.lunchMenu));
+  title.append(lunch);
 }
 
-
-const beverageParts = beverageRecords(r)
+const beverageParts = (r.beverages || [])
   .map(item => {
     const type = item.type || "";
     const count = item.count;
@@ -1401,15 +1401,22 @@ const beverageParts = beverageRecords(r)
   .filter(Boolean);
 
 if (beverageParts.length) {
-  extraInfo.push(`음료: ${beverageParts.join(" / ")}`);
+  const beverage = document.createElement("div");
+  beverage.style.fontSize = "13px";
+  beverage.style.marginTop = "3px";
+
+  const label = document.createElement("span");
+  label.textContent = "음료 ";
+  label.style.color = "#78977b";
+  label.style.fontWeight = "600";
+
+  beverage.append(
+    label,
+    document.createTextNode(beverageParts.join(" / "))
+  );
+
+  title.append(beverage);
 }
-
-
-title.textContent =
-  `${formatDate(r.date)} · ${num(r.weight).toFixed(1)}kg` +
-  (extraInfo.length ? `\n${extraInfo.join(" / ")}` : "");
-
-title.style.whiteSpace = "pre-line";
 
 
 
@@ -1458,7 +1465,7 @@ f.elements.id.value = r.id;
 f.elements.date.value = r.date;
 f.elements.weight.value = r.weight ?? "";
 f.elements.lunchMenu.value = r.lunchMenu || "";
-resetBeverageEntries(beverageRecords(r));
+resetBeverageEntries(r.beverages || []);
 
 
 
