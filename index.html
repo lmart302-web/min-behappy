@@ -439,32 +439,40 @@
         <form id="weightForm" class="record-form">
           <input type="hidden" name="id">
 
-          <div class="form-grid">
+          
+<div class="form-grid">
   <div>
     <label for="weightDate">측정 날짜</label>
-    <input id="weightDate" name="date" type="date" required>
+    <input id="weightDate" name="date" type="date">
   </div>
 
   <div>
     <label for="weightValue">체중 (kg)</label>
     <input id="weightValue" name="weight" type="number" min="0" max="500" step="0.1" placeholder="예: 78.5">
   </div>
-
-  <div>
-    <label for="beverageType">음료 종류 및 용량</label>
-    <input id="beverageType" name="beverageType" type="text" placeholder="예: 제로콜라350ml">
-  </div>
-
-  <div>
-    <label for="beverageCount">음료 섭취 횟수</label>
-    <input id="beverageCount" name="beverageCount" type="number" min="0" step="1" placeholder="예: 2">
-  </div>
-
-  <div>
-    <label for="lunchMenu">점심메뉴</label>
-    <input id="lunchMenu" name="lunchMenu" type="text" placeholder="예: 냉면">
-  </div>
 </div>
+
+<div class="beverage-section">
+  <label>음료 섭취 기록</label>
+
+  <div id="beverageEntries">
+    <div class="beverage-row">
+      <input type="text" class="beverage-type" placeholder="음료 종류 및 용량 (예: 제로콜라350ml)">
+      <input type="number" class="beverage-count" min="0" step="1" placeholder="횟수">
+      <button type="button" class="beverage-remove" aria-label="음료 삭제">－</button>
+    </div>  
+  </div>
+
+  <button type="button" id="addBeverage" class="button button-secondary">
+    + 음료 추가
+  </button>
+</div>
+
+<div>
+  <label for="lunchMenu">점심메뉴</label>
+  <input id="lunchMenu" name="lunchMenu" type="text" placeholder="예: 냉면">
+</div>
+
 
           <div class="form-actions">
             <button class="button button-primary" type="submit">저장</button>

@@ -946,102 +946,160 @@ async function renderCrying() {
 
 
 
-$("weightForm").addEventListener("submit", async e => {
 
+ // 체중 기록
+
+function addBeverageRow(type = "", count = "") {
+  const row = document.createElement("div");
+  row.className = "beverage-row";
+
+  const typeInput = document.createElement("input");
+  typeInput.type = "text";
+  typeInput.className = "beverage-type";
+  typeInput.placeholder = "음료 종류 및 용량 (예: 제로콜라350ml)";
+  typeInput.value = type;
+
+  const countInput = document.createElement("input");
+  countInput.type = "number";
+  countInput.className = "beverage-count";
+  countInput.min = "0";
+  countInput.step = "1";
+  countInput.placeholder = "횟수";
+  countInput.value = count;
+
+  const removeButton = document.createElement("button");
+  removeButton.type = "button";
+  removeButton.className = "beverage-remove";
+  removeButton.setAttribute("aria-label", "음료 삭제");
+  removeButton.textContent = "－";
+
+  row.append(typeInput, countInput, removeButton);
+  $("beverageEntries").append(row);
+}
+
+function resetBeverageEntries(records = []) {
+  const container = $("beverageEntries");
+  container.innerHTML = "";
+
+  if (records.length) {
+    records.forEach(item => {
+      addBeverageRow(item.type || "", item.count ?? "");
+    });
+  } else {
+    addBeverageRow();
+  }
+}
+
+function getBeverageEntries() {
+  return [...$("beverageEntries").querySelectorAll(".beverage-row")]
+    .map(row => {
+      const type = row.querySelector(".beverage-type").value.trim();
+      const countValue = row.querySelector(".beverage-count").value;
+
+      return {
+        type,
+        count: countValue === "" ? "" : num(countValue)
+      };
+    })
+    .filter(item => item.type || item.count !== "");
+}
+
+// 음료 추가 버튼
+$("addBeverage").addEventListener("click", () => {
+  addBeverageRow();
+});
+
+// 음료 삭제 버튼
+$("beverageEntries").addEventListener("click", e => {
+  const button = e.target.closest(".beverage-remove");
+  if (!button) return;
+
+  button.closest(".beverage-row").remove();
+
+  if (!$("beverageEntries").querySelector(".beverage-row")) {
+    addBeverageRow();
+  }
+});
+
+// 기존 단일 음료 기록도 호환
+function beverageRecords(record) {
+  if (Array.isArray(record.beverages)) {
+    return record.beverages;
+  }
+
+  if (record.beverageType) {
+    return [{
+      type: record.beverageType,
+      count: record.beverageCount ?? ""
+    }];
+  }
+
+  return [];
+}
+
+resetBeverageEntries();
+
+$("weightForm").addEventListener("submit", async e => {
   e.preventDefault();
 
-
-
   const f = e.currentTarget;
-
   const btn = f.querySelector('[type="submit"]');
-
   btn.disabled = true;
 
-
-
   try {
-
     const data = {
-  date: f.elements.date.value,
-  weight: num(f.elements.weight.value),
-  lunchMenu: f.elements.lunchMenu.value.trim(),
-  beverageType: f.elements.beverageType.value.trim(),
-  beverageCount: f.elements.beverageCount.value === ""
-    ? ""
-    : num(f.elements.beverageCount.value)
-};
-
-
-  
-
-
+      date: f.elements.date.value,
+      weight: num(f.elements.weight.value),
+      lunchMenu: f.elements.lunchMenu.value.trim(),
+      beverages: getBeverageEntries()
+    };
 
     const editingId = f.elements.id.value;
 
-
-
     const sameDate = cache.weight.filter(
-
       r => r.date === data.date && r.id !== editingId
-
     );
 
-
-
     const existing = sameDate[0];
-
     const weightId = editingId || existing?.id || data.date;
-
-
 
     await saveDoc(C.weight, weightId, data);
 
-
-
     const duplicates = sameDate.filter(r => r.id !== weightId);
 
-
-
     for (const r of duplicates) {
-
       await removeDoc(C.weight, r.id);
-
     }
-
-
 
     await refreshData();
 
-
-
     f.reset();
-
     f.elements.id.value = "";
-
     $("weightDate").value = localDate();
-
     $("cancelWeightEdit").classList.add("hidden");
-
-
+    resetBeverageEntries();
 
     showMessage("weightMessage", "기록을 저장했어요.");
-
     await renderWeight();
-
   } catch (err) {
-
     console.error(err);
-
     showMessage("weightMessage", err.message || "저장하지 못했어요.", true);
-
   } finally {
-
     btn.disabled = false;
-
   }
-
 });
+
+$("cancelWeightEdit").addEventListener("click", () => {
+  const f = $("weightForm");
+
+  f.reset();
+  f.elements.id.value = "";
+  $("weightDate").value = localDate();
+  $("cancelWeightEdit").classList.add("hidden");
+  resetBeverageEntries();
+  showMessage("weightMessage", "");
+});
+;
 
 
 
@@ -1325,19 +1383,27 @@ if (r.lunchMenu) {
   extraInfo.push(`점심: ${r.lunchMenu}`);
 }
 
-const beverageParts = [];
 
-if (r.beverageType) {
-  beverageParts.push(r.beverageType);
-}
+const beverageParts = beverageRecords(r)
+  .map(item => {
+    const type = item.type || "";
+    const count = item.count;
 
-if (r.beverageCount !== undefined && r.beverageCount !== "") {
-  beverageParts.push(`${r.beverageCount}회`);
-}
+    if (type && count !== "" && count != null) {
+      return `${type} ${count}회`;
+    }
+
+    if (type) return type;
+    if (count !== "" && count != null) return `${count}회`;
+
+    return "";
+  })
+  .filter(Boolean);
 
 if (beverageParts.length) {
-  extraInfo.push(`음료: ${beverageParts.join(" · ")}`);
+  extraInfo.push(`음료: ${beverageParts.join(" / ")}`);
 }
+
 
 title.textContent =
   `${formatDate(r.date)} · ${num(r.weight).toFixed(1)}kg` +
@@ -1387,12 +1453,12 @@ title.style.whiteSpace = "pre-line";
 
 
 
-      f.elements.id.value = r.id;
+     
+f.elements.id.value = r.id;
 f.elements.date.value = r.date;
-f.elements.weight.value = r.weight;
+f.elements.weight.value = r.weight ?? "";
 f.elements.lunchMenu.value = r.lunchMenu || "";
-f.elements.beverageType.value = r.beverageType || "";
-f.elements.beverageCount.value = r.beverageCount ?? "";
+resetBeverageEntries(beverageRecords(r));
 
 
 
