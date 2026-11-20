@@ -1,20 +1,24 @@
-import { db } from "./firebase.js";
-
-
+import { db, auth } from "./firebase.js";
 
 import {
-
   collection,
-
   doc,
-
   getDocs,
-
   setDoc,
-
-  deleteDoc
-
+  deleteDoc,
+  addDoc,
+  query,
+  orderBy,
+  limit,
+  serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+import {
+  signInAnonymously,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 
 
@@ -4149,3 +4153,250 @@ try {
   alert("데이터를 불러오지 못했어요. Firebase 설정과 Firestore 보안 규칙을 확인해 주세요.");
 
 }
+
+
+// =====================================
+// 방문 기록 및 관리자 기능
+// =====================================
+
+function setupAccessLogFeature() {
+  const ADMIN_EMAIL = "region007@naver.com";
+
+  let visitRecorded = false;
+
+  const footer = document.querySelector(".footer");
+  if (!footer) return;
+
+  // 관리자 화면 스타일
+  const style = document.createElement("style");
+  style.textContent = `
+    #accessAdminPanel {
+      margin: 18px 0;
+      padding: 18px;
+      border: 1px solid #dce7d5;
+      border-radius: 14px;
+      background: #fff;
+    }
+
+    #accessAdminPanel[hidden],
+    #accessLoginForm[hidden],
+    #accessAdminTools[hidden] {
+      display: none !important;
+    }
+
+    #accessLogList {
+      margin-top: 14px;
+    }
+
+    .access-log-item {
+      padding: 11px 0;
+      border-bottom: 1px solid #eee;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    #accessAdminPanel input {
+      width: 100%;
+      margin: 7px 0 12px;
+      padding: 11px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      box-sizing: border-box;
+    }
+  `;
+  document.head.appendChild(style);
+
+  // 관리자 버튼
+  const adminButton = document.createElement("button");
+  adminButton.type = "button";
+  adminButton.className = "button button-secondary";
+  adminButton.textContent = "관리자";
+  adminButton.style.marginTop = "10px";
+  footer.appendChild(document.createElement("br"));
+  footer.appendChild(adminButton);
+
+  // 관리자 패널
+  const panel = document.createElement("section");
+  panel.id = "accessAdminPanel";
+  panel.hidden = true;
+
+  panel.innerHTML = `
+    <h3>관리자 방문 기록</h3>
+
+    <form id="accessLoginForm">
+      <label>관리자 이메일</label>
+      <input
+        type="email"
+        id="accessAdminEmail"
+        value="region007@naver.com"
+        readonly
+      >
+
+      <label>관리자 비밀번호</label>
+      <input
+        type="password"
+        id="accessAdminPassword"
+        placeholder="관리자 비밀번호"
+        required
+      >
+
+      <button class="button button-primary" type="submit">
+        관리자 로그인
+      </button>
+
+      <p id="accessLoginMessage" role="status"></p>
+    </form>
+
+    <div id="accessAdminTools" hidden>
+      <div class="form-actions">
+        <button
+          type="button"
+          class="button button-primary"
+          id="refreshAccessLogs"
+        >기록 새로고침</button>
+
+        <button
+          type="button"
+          class="button button-secondary"
+          id="accessLogout"
+        >로그아웃</button>
+      </div>
+
+      <p id="accessLogCount"></p>
+      <div id="accessLogList"></div>
+    </div>
+  `;
+
+  footer.before(panel);
+
+  const loginForm = document.getElementById("accessLoginForm");
+  const adminTools = document.getElementById("accessAdminTools");
+  const logList = document.getElementById("accessLogList");
+
+  adminButton.addEventListener("click", () => {
+    panel.hidden = !panel.hidden;
+  });
+
+  // 방문 기록 조회
+  async function loadAccessLogs() {
+    logList.textContent = "방문 기록을 불러오는 중입니다.";
+
+    try {
+      const q = query(
+        collection(db, "accessLogs"),
+        orderBy("createdAt", "desc"),
+        limit(100)
+      );
+
+      const snapshot = await getDocs(q);
+
+      document.getElementById("accessLogCount").textContent =
+        `최근 방문 기록 ${snapshot.size}건`;
+
+      logList.innerHTML = "";
+
+      if (snapshot.empty) {
+        logList.textContent = "아직 방문 기록이 없습니다.";
+        return;
+      }
+
+      snapshot.forEach(docSnap => {
+        const data = docSnap.data();
+
+        const item = document.createElement("div");
+        item.className = "access-log-item";
+
+        const date = data.createdAt?.toDate
+          ? data.createdAt.toDate().toLocaleString("ko-KR")
+          : "시간 확인 중";
+
+        item.textContent =
+          `${date} · 방문자 ID: ${String(data.uid || "").slice(0, 12)}`;
+
+        logList.appendChild(item);
+      });
+
+    } catch (error) {
+      console.error("방문 기록 조회 오류:", error);
+      logList.textContent = "방문 기록을 불러오지 못했습니다.";
+    }
+  }
+
+  // 관리자 로그인
+  loginForm.addEventListener("submit", async event => {
+    event.preventDefault();
+
+    const password =
+      document.getElementById("accessAdminPassword").value;
+
+    const message = document.getElementById("accessLoginMessage");
+
+    try {
+      await signInWithEmailAndPassword(
+        auth,
+        ADMIN_EMAIL,
+        password
+      );
+
+      document.getElementById("accessAdminPassword").value = "";
+      message.textContent = "";
+
+    } catch (error) {
+      console.error("관리자 로그인 오류:", error);
+      message.textContent = "로그인에 실패했습니다. 이메일과 비밀번호를 확인해 주세요.";
+    }
+  });
+
+  // 로그아웃
+  document.getElementById("accessLogout").addEventListener("click", async () => {
+    await signOut(auth);
+  });
+
+  // 새로고침
+  document.getElementById("refreshAccessLogs").addEventListener("click", () => {
+    loadAccessLogs();
+  });
+
+  // 로그인 상태 확인 및 방문 기록 저장
+  onAuthStateChanged(auth, async user => {
+
+    if (!user) {
+      loginForm.hidden = false;
+      adminTools.hidden = true;
+
+      try {
+        await signInAnonymously(auth);
+      } catch (error) {
+        console.error("익명 로그인 오류:", error);
+      }
+
+      return;
+    }
+
+    const isAdmin = user.email === ADMIN_EMAIL;
+
+    loginForm.hidden = isAdmin;
+    adminTools.hidden = !isAdmin;
+
+    if (isAdmin) {
+      loadAccessLogs();
+    }
+
+    // 페이지 접속당 한 번만 기록
+    if (!visitRecorded) {
+      visitRecorded = true;
+
+      try {
+        await addDoc(collection(db, "accessLogs"), {
+          uid: user.uid,
+          createdAt: serverTimestamp(),
+          userAgent: navigator.userAgent
+        });
+      } catch (error) {
+        console.error("방문 기록 저장 오류:", error);
+      }
+    }
+  });
+}
+
+setupAccessLogFeature();
